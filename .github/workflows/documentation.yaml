@@ -1,22 +1,48 @@
-name: Docs
+name: Publish documentation on Github Pages
+
 on: [push, pull_request, workflow_dispatch]
+
+# Cancel any in-progress job or run
+# https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#concurrency
+concurrency:
+  group: gh-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+    permissions:
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Download SOFA
+        run: |
+          wget https://github.com/sofa-framework/sofa/releases/download/v22.12.00/SOFA_v22.12.00_Linux.zip
+          unzip SOFA_v22.12.00_Linux.zip
+          rm SOFA_v22.12.00_Linux.zip
+      - name: Preinstall PyOpenGL (https://github.com/mcfletch/pyopengl/issues/74)
+        run: |
+          pip install PyOpenGL
+      - name: Remove PyOpenGL from setup.py
+        run: |
+          mv setup.py original_setup.py
+          sed '/PyOpenGL/d' original_setup.py > setup.py
       - name: Install dependencies
         run: |
-          pip install sphinx sphinx_rtd_theme
-      - name: Sphinx build
-        run: |
-          sphinx-build docs/source docs/_build
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v3
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          export SOFA_ROOT=$(pwd)/SOFA_v22.12.00_Linux
+          export SOFAPYTHON3_ROOT=$SOFA_ROOT/plugins/SofaPython3
+          export PYTHONPATH=$SOFAPYTHON3_ROOT/lib/python3/site-packages
+          pip install -e .
+      - id: deployment
+        uses: sphinx-notes/pages@v3
         with:
-          publish_branch: gh-pages
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: _build/
-          force_orphan: true
+          documentation_path: docs/source
+          cache: true
