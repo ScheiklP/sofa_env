@@ -1,7 +1,7 @@
 # SOFA_ENV
 Gym environments for reinforcement learning based on the [SOFA Simulation Framework](https://www.sofa-framework.org/).
 This repository is part of "LapGym - An Open Source Framework for Reinforcement Learning in Robot-Assisted Laparoscopic Surgery".
-See [LapGym](TODO) for the paper and [lap_gym](https://github.com/ScheiklP/lap_gym) for the top level repository.
+See [LapGym](https://arxiv.org/abs/2302.09606) for the paper and [lap_gym](https://github.com/ScheiklP/lap_gym) for the top level repository.
 
 ## Getting Started
 Tested under Ubuntu {18.04, 20.04, 22.04}, Fedora {36, 37}, and Windows (WSL).
@@ -21,7 +21,7 @@ python3 sofa_env/scenes/controllable_object_example/controllable_env.py
 
 ## Environments
 This repository currently contains 14 reinforcement learning environments.
-- 12 robot-assited laparoscopy environments from [LapGym](TODO)
+- 12 robot-assited laparoscopy environments from [LapGym](https://arxiv.org/abs/2302.09606)
 - a reinforcement learning environment around the scene from [A Simulation Framework for Magnetic Continuum Robots](https://github.com/ethz-msrl/mCR_simulator)
 - the reinforcement learning environment from [Sim-to-Real Transfer for Visual Reinforcement Learning of Deformable Object Manipulation for Robot-Assisted Surgery](https://ieeexplore.ieee.org/abstract/document/9976185)
 
@@ -63,7 +63,7 @@ If you use the project in your work, please consider citing it with:
     authors = {Scheikl, Paul Maria and Gyenes, Balázs and Younis, Rayan and Haas, Christoph and Neumann, Gerhard and Mathis-Ullrich, Franziska and Wagner, Martin},
     title = {LapGym - An Open Source Framework for Reinforcement Learning in Robot-Assisted Laparoscopic Surgery},
     year = {2023},
-    journal={arXiv preprint arXiv:TODO},
+    journal={arXiv preprint arXiv:2302.09606},
 }
 ```
 
