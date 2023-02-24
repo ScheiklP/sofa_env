@@ -48,7 +48,7 @@ Please refer to the included documentation for a tutorial on how to build new sc
 Also visit [sofa_godot](https://github.com/ScheiklP/sofa_godot) for SofaGodot, a [Godot](https://github.com/godotengine/godot) plugin to visually create new SOFA scenes.
 
 ## Documentation
-You can either access the documentation at [TODO]() or build it locally with
+You can either access the documentation [here](https://scheiklp.github.io/sofa_env/) or build it locally with
 
 ```bash
 cd docs
