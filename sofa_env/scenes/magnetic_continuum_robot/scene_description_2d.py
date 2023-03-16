@@ -6,8 +6,7 @@ from pathlib import Path
 import numpy as np
 
 import Sofa.Core
-from mcr_sim import mcr_environment, mcr_instrument, mcr_emns, mcr_simulator, mcr_controller_sofa, mcr_magnet
-
+from sofa_env.scenes.magnetic_continuum_robot.mcr_sim import mcr_environment, mcr_instrument, mcr_emns, mcr_simulator, mcr_controller_sofa, mcr_magnet
 from sofa_env.sofa_templates.camera import Camera, CAMERA_PLUGIN_LIST
 
 
