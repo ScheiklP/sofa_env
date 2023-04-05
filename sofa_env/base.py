@@ -19,12 +19,13 @@ class RenderMode(Enum):
 
     - state based without rendering anything (NONE),
     - generate image observations headlessly without creating a window (HEADLESS),
+    - create a window to observe the simulation for a remote workstation or WSL (REMOTE).
     - or create a window to observe the simulation (HUMAN).
     """
 
     HUMAN = 0
     HEADLESS = 1
-    WSL = 2
+    REMOTE = 2
     NONE = 3
 
 
@@ -42,7 +43,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
     Notes:
         - if using vectorized environments, MUST use a subprocess wrapper because only one SOFA simulation can exist per process. It will not throw an error, but the simulations will be invalid.
-        - for rendering or generating image observations, you have the options to set ``render_mode`` to one of the ``RenderMode`` enum cases. (1) ``HUMAN`` will create a pyglet window and render the images into that window. This classe's step and reset function will also return this image as a numpy array. (2) ``HEADLESS`` will do the same thing, but without a window. Pyglet will use EGL to create a render context, that does not need an actual window. (3) ``NONE`` is the case where you are not interested in visual observations. Use this, if you are only interested in the states of the simulation.
+        - for rendering or generating image observations, you have the options to set ``render_mode`` to one of the ``RenderMode`` enum cases. (1) ``HUMAN`` will create a pyglet window and render the images into that window. This classe's step and reset function will also return this image as a numpy array. (2) ``HEADLESS`` will do the same thing, but without a window. Pyglet will use EGL to create a render context, that does not need an actual window. (3) ``REMOTE`` Create and show a pyglet Window (similar to HUMAN render mode) for a remote workstation or when working under WSL. The exported display has to be adjusted and a display server like Xming or Mobaxterm is needed for the visualization. (4) ``NONE`` is the case where you are not interested in visual observations. Use this, if you are only interested in the states of the simulation.
 
     Args:
         scene_path (Union[Path, str]): absolute path to the scene file (.py) to load.
@@ -69,6 +70,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         # HUMAN -> create and show a pyglet window
         # HEADLESS -> no pyglet window created
+        # REMOTE -> create and show a pyglet window for remote workstation or WSL
         # NONE -> no visuals
         self.render_mode = render_mode
         self._initialized = False
@@ -81,8 +83,8 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
                 "video.output_frames_per_second": 1 / time_step / frame_skip,
             }
 
-            if self.render_mode == RenderMode.WSL:
-                self._maybe_update_rgb_buffer = self._update_rgb_buffer_wsl
+            if self.render_mode == RenderMode.REMOTE:
+                self._maybe_update_rgb_buffer = self._update_rgb_buffer_remote
             else:
                 self._maybe_update_rgb_buffer = self._update_rgb_buffer
         else:
@@ -258,10 +260,10 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         return rgb_array
 
-    def _update_rgb_buffer_wsl(self) -> np.ndarray:
+    def _update_rgb_buffer_remote(self) -> np.ndarray:
         """Updates the visuals in sofa, writes the rgb array to the envs rgb_buffer, flips the pyglet window, and returns the rgb array."""
         self._update_sofa_visuals()
-        rgb_array = self.get_rgb_from_open_gl_wsl()
+        rgb_array = self.get_rgb_from_open_gl_remote()
         self._rgb_buffer[:] = rgb_array
         self._window.flip()
 
@@ -353,7 +355,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         self.opengl_gl.glMultMatrixd(self._camera_object.getOpenGLModelViewMatrix())
         self.sofa_gl.draw(self._sofa_root_node)
 
-    def get_rgb_from_open_gl_wsl(self) -> np.ndarray:
+    def get_rgb_from_open_gl_remote(self) -> np.ndarray:
         """Reads the rgb buffer from OpenGL and returns a copy."""
         gl = self.opengl_gl
         height = self._camera_object.heightViewport.value
