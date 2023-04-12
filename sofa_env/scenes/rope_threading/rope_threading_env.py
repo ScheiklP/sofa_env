@@ -694,7 +694,7 @@ class RopeThreadingEnv(SofaEnv):
             state_dict["active_eye_pose"] = np.zeros(4)
             state_dict["active_eye_pose"][:3] = self.eyes[self.active_index].center_pose[:3]
             state_dict["active_eye_pose"][-1] = self.eyes[self.active_index].rotation
-            observation = np.concatenate(tuple(state_dict.values()))
+            observation = np.concatenate(tuple(state_dict.values()),  dtype=self.observation_space.dtype)
             observation = np.where(np.isnan(observation), 1.0 / self._distance_normalization_factor, observation)
             # Clip observation values to 10 times the workspace size.
             observation = np.clip(observation, -10.0 / self._distance_normalization_factor, 10.0 / self._distance_normalization_factor)
