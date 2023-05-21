@@ -28,7 +28,9 @@ class RenderMode(Enum):
     HEADLESS = 1
     REMOTE = 2
     NONE = 3
-
+class Framework(Enum):
+    PYGLET = 1
+    PYGAME = 2
 
 class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
     """Abstract class for SOFA simulation environments.
@@ -421,40 +423,41 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         return linearized_depth_array
 
+    def get_rgb_from_pyglet(self) -> np.ndarray:
+        # Get the current color buffer
+        rgba_buffer = pyglet.image.get_buffer_manager().get_color_buffer()
+        # Get the pixel data from the color buffer
+        rgba_image_data = rgba_buffer.get_image_data()
+        # Get the raw byte array of the pixel data
+        pixel_data = rgba_image_data.get_data("RGB", rgba_image_data.width * 3)
+        # Convert the byte array to numpy array
+        pixel_array = np.frombuffer(pixel_data, dtype=np.uint8)
+            # Reshape the array to a 2D array of RGB values
+        rgb_array = pixel_array.reshape((rgba_image_data.height, rgba_image_data.width, 3))
+        # Convert the array to a list of RGB tuples
+        #rgb_values = rgb_array.tolist()
+        return rgb_array
+        
+    def get_rgb_from_pygame(self) -> np.ndarray:
+        # Get the Pygame screen surface
+        screen_surface = pygame.display.get_surface()
+        # Get the pixel data from the screen surface
+        pixel_array = pygame.surfarray.array3d(screen_surface)
+        # Convert the array to a list of RGB tuples
+        #rgb_values = pixel_array.tolist()
+        return pixel_array
+
+    
+    def get_rgb(self,render_fr):
+        if render_fr == Framework.PYGLET:
+            return self.get_rgb_from_pygame()
+        elif render_fr == Framework.PYGAME:
+            return self.get_rgb_from_pygame()
+
+
     @abc.abstractmethod
     def _do_action(self, action) -> None:
         return
 
-class Framework(Enum):
-    PYGLET = 1
-    PYGAME = 2
-def get_rgb_from_pyglet():
-    # Get the current color buffer
-    rgba_buffer = pyglet.image.get_buffer_manager().get_color_buffer()
-    # Get the pixel data from the color buffer
-    rgba_image_data = rgba_buffer.get_image_data()
-    # Get the raw byte array of the pixel data
-    pixel_data = rgba_image_data.get_data("RGB", rgba_image_data.width * 3)
-    # Convert the byte array to numpy array
-    pixel_array = np.frombuffer(pixel_data, dtype=np.uint8)
-        # Reshape the array to a 2D array of RGB values
-    rgb_array = pixel_array.reshape((rgba_image_data.height, rgba_image_data.width, 3))
-    # Convert the array to a list of RGB tuples
-    rgb_values = rgb_array.tolist()
-    return rgb_values
-    
-def get_rgb_from_pygame():
-    # Get the Pygame screen surface
-    screen_surface = pygame.display.get_surface()
-    # Get the pixel data from the screen surface
-    pixel_array = pygame.surfarray.array3d(screen_surface)
-    # Convert the array to a list of RGB tuples
-    rgb_values = pixel_array.tolist()
-    return rgb_values
-def get_rgb(render_framework):
-    if render_framework == Framework.PYGLET:
-        return get_rgb_from_pyglet()
-    elif render_framework == Framework.PYGAME:
-        return get_rgb_from_pygame()
-render_framework = Framework.PYGLET  # or Framework.PYGAME
-rgb = get_rgb(render_framework)
+render_framework = Framework.PYGLET  
+rgb = SofaEnv().get_rgb(render_fr=render_framework)
