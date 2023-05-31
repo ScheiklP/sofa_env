@@ -464,7 +464,7 @@ class RopeCuttingEnv(SofaEnv):
         if self._initialized:
             self.sofa_simulation.unload(self._sofa_root_node)
             if hasattr(self, "_window"):
-                self._window.close()
+                super().close()
             self._init_sim()
         super().reset()
 

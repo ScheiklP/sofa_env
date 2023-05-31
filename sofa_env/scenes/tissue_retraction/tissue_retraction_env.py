@@ -9,7 +9,7 @@ from pathlib import Path
 
 from typing import Callable, Union, Tuple, Optional, List, Any
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode , RenderFramework
 from sofa_env.scenes.tissue_retraction.sofa_objects.end_effector import EndEffector, is_in, add_waypoints_to_end_effector
 
 HERE = Path(__file__).resolve().parent
@@ -540,7 +540,10 @@ class TissueRetractionEnv(SofaEnv):
             distance_to_show = self.reward_info["distance_to_end_position"] if self._phase == Phase.RETRACTING else self.reward_info["distance_to_grasping_position"]
             if distance_to_show is None:
                 distance_to_show = -1.0
-            self._window.set_caption(f"{self._phase.name} {distance_to_show:.5f}")
+            if self.render_framework == RenderFramework.PYGLET:
+                self._window.set_caption(f"{self._phase.name} {distance_to_show:.5f}")
+            elif self.render_framework == RenderFramework.PYGAME:
+                self.pygame.display.set_caption(f"{self._phase.name} {distance_to_show:.5f}")
 
         self.reward_info["reward"] = reward
         return reward

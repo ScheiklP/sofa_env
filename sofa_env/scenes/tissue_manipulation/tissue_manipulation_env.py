@@ -10,7 +10,7 @@ from pathlib import Path
 from collections import deque
 from typing import Union, Tuple, Optional, Any, List, Dict
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.utils.camera import world_to_pixel_coordinates
 
 from sofa_env.scenes.tissue_manipulation.sofa_robot_functions import WorkspaceType, Workspace
@@ -664,8 +664,10 @@ class TissueManipulationEnv(SofaEnv):
             distance_to_show = self.reward_info["distance_to_target_position"]
             if distance_to_show is None:
                 distance_to_show = -1.0
-
-            self._window.set_caption(f"D:{distance_to_show:.5f}")
+            if self.render_framework == RenderFramework.PYGLET:
+                self._window.set_caption(f"D:{distance_to_show:.5f}")
+            elif self.render_framework == RenderFramework.PYGAME:
+                self.pygame.display.set_caption(f"D:{distance_to_show:.5f}")
 
     def calculate_smoothness(self, trajectory: List, scaling_factor: float = 1e3) -> float:
         """Calculate 2nd order gradient for x and z direction respectively. Then computes Mean Square of Gradients."""
@@ -696,8 +698,14 @@ class TissueManipulationEnv(SofaEnv):
             return None
 
         img_bgr = cv2.cvtColor(observation, cv2.COLOR_RGB2BGR)
-        cv2.imshow(f"Sofa_{id(self)}", img_bgr)
-        cv2.waitKey(1)
+
+        if self.render_framework == RenderFramework.PYGLET:
+            cv2.imshow(f"Sofa_{id(self)}", img_bgr)
+            cv2.waitKey(1)
+        elif self.render_framework == RenderFramework.PYGAME:
+            img_bgr = self.pygame.surfarray.make_surface(img_bgr)
+            self._window.blit(img_bgr, (self._camera_object.heightViewport.value/2, self._camera_object.widthViewport.value/2))
+            self.pygame.display.flip()
 
 
 if __name__ == "__main__":
