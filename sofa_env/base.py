@@ -75,13 +75,10 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
     ) -> None:
 
         if "SOFA_ROOT" not in os.environ:
-            os.environ["SOFA_ROOT"] ='/home/badhon/work/sofa/build/install'
-
-            #raise RuntimeError("Missing SOFA_ROOT in your environment variables.")
+            raise RuntimeError("Missing SOFA_ROOT in your environment variables.")
 
         if "SOFAPYTHON3_ROOT" not in os.environ:
-            os.environ["SOFAPYTHON3_ROOT"] ='/home/badhon/work/sofa/build/install/plugins/SofaPython3'
-            #raise RuntimeError("Missing SOFAPYTHON3_ROOT in your environment variables.")
+            raise RuntimeError("Missing SOFAPYTHON3_ROOT in your environment variables.")
 
         # HUMAN -> create and show a pyglet window
         # HEADLESS -> no pyglet window created
