@@ -9,7 +9,7 @@ from pathlib import Path
 
 from typing import Callable, Union, Tuple, Optional, List, Any
 
-from sofa_env.base import SofaEnv, RenderMode , RenderFramework
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.tissue_retraction.sofa_objects.end_effector import EndEffector, is_in, add_waypoints_to_end_effector
 
 HERE = Path(__file__).resolve().parent
@@ -27,7 +27,6 @@ class ObservationType(Enum):
 
 @unique
 class ActionType(Enum):
-
     DISCRETE = 0
     CONTINUOUS = 1
 
@@ -64,6 +63,7 @@ class TissueRetractionEnv(SofaEnv):
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         maximum_robot_velocity (float): Maximum per direction robot velocity in meters per second. Used for scaling the actions that are passed to ``env.step(action)``.
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         action_space (Optional[gym.spaces.Box]): An optional Box action space to set the limits for clipping.
         grasping_position (Union[Tuple[float, float, float], np.ndarray]): World coordinates of the point that should be reached during grasping.
         end_position (Union[Tuple[float, float, float], np.ndarray]): World coordinates of the point that should be reached during retracting.
@@ -91,6 +91,7 @@ class TissueRetractionEnv(SofaEnv):
         maximum_robot_velocity: float = 5.0,
         discrete_action_magnitude: Optional[float] = 3.0,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         action_space: Optional[gym.spaces.Box] = None,
         grasping_position: Union[Tuple[float, float, float], np.ndarray] = (-0.0485583, 0.0085, 0.0356076),
         end_position: Union[Tuple[float, float, float], np.ndarray] = (-0.019409, 0.062578, -0.00329643),
@@ -112,7 +113,6 @@ class TissueRetractionEnv(SofaEnv):
         create_scene_kwargs: Optional[dict] = None,
         on_reset_callbacks: Optional[List[Callable]] = None,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -123,6 +123,7 @@ class TissueRetractionEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -281,9 +282,7 @@ class TissueRetractionEnv(SofaEnv):
         else:
             print(f"Visibility ratio not defined for resolution {image_shape}.")
             if reward_amount_dict["target_visible_scaling"] > 0.0:
-                raise ValueError(
-                    f"Was asked to reward target visibility (target_visible_scaling) but could not find a value for self.max_sum_visibility_mask for image shape {image_shape}. Please use the debug_render method of TissueRetractionEnv to determine the value for self.max_sum_visibility_mask at image shape {image_shape}. Currently available image shapes are 84x84, 128x128, and 480x480."
-                )
+                raise ValueError(f"Was asked to reward target visibility (target_visible_scaling) but could not find a value for self.max_sum_visibility_mask for image shape {image_shape}. Please use the debug_render method of TissueRetractionEnv to determine the value for self.max_sum_visibility_mask at image shape {image_shape}. Currently available image shapes are 84x84, 128x128, and 480x480.")
             self.max_sum_visibility_mask = np.inf
 
         # Callback functions called on reset
@@ -450,7 +449,6 @@ class TissueRetractionEnv(SofaEnv):
             # COLLISIONS
             ############
             if self.reward_amount_dict["collision_cost_factor"] > 0.0:
-
                 #####################
                 # CHECK FOR COLLISION
                 #####################
@@ -474,7 +472,6 @@ class TissueRetractionEnv(SofaEnv):
                         collision_cost = -self.reward_amount_dict["collision_cost_factor"] * distance * self._reward_scaling_factor
 
                     elif self._collision_punishment_mode == CollisionPunishmentMode.MOTIONINTISSUE:
-
                         if not self._collision_is_fresh:
                             self._initial_tissue_collision_point[:] = current_position[:]
                             self._collision_is_fresh = True
@@ -522,9 +519,11 @@ class TissueRetractionEnv(SofaEnv):
             # Target visibility
             if self.reward_amount_dict["target_visible_scaling"] > 0.0:
                 if rgb_observation is None:
-                    raise ValueError(f"For including target visibility in the reward function, please set the render_mode to RenderMode.HUMAN or RenderMode.HEADLESS. \
+                    raise ValueError(
+                        f"For including target visibility in the reward function, please set the render_mode to RenderMode.HUMAN or RenderMode.HEADLESS. \
                                      If you do not want to visually render the scene, set ``target_visible_scaling`` in the reward_amount_dict to ``0`` \
-                                     (currently at {self.reward_amount_dict['target_visible_scaling']}).")
+                                     (currently at {self.reward_amount_dict['target_visible_scaling']})."
+                    )
                 hsv_image = cv2.cvtColor(rgb_observation, cv2.COLOR_RGB2HSV)
                 visibility_mask = cv2.inRange(hsv_image, self.target_color_hsv - self.color_delta, self.target_color_hsv + self.color_delta)
                 ratio_visible = np.sum(visibility_mask) / self.max_sum_visibility_mask
