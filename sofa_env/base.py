@@ -28,15 +28,16 @@ class RenderMode(Enum):
     REMOTE = 2
     NONE = 3
 
+
 @unique
 class RenderFramework(Enum):
     """RenderFramework options for SofaEnv.
 
     This enum specifies which library will be used between pyglet and pygame
     """
+
     PYGLET = 0
     PYGAME = 1
-
 
 
 class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
@@ -61,6 +62,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
         create_scene_kwargs (Optional[dict]): a dictionary to pass additional keyword arguments to the ``createScene`` function.
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
     """
 
     def __init__(
@@ -70,10 +72,8 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         frame_skip: int = 1,
         render_mode: RenderMode = RenderMode.NONE,
         create_scene_kwargs: Optional[dict] = None,
-        render_framework: RenderFramework = RenderFramework.PYGLET
-
+        render_framework: RenderFramework = RenderFramework.PYGLET,
     ) -> None:
-
         if "SOFA_ROOT" not in os.environ:
             raise RuntimeError("Missing SOFA_ROOT in your environment variables.")
 
@@ -85,10 +85,10 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         # REMOTE -> create and show a pyglet window for remote workstation or WSL
         # NONE -> no visuals
         self.render_mode = render_mode
+        self.render_framework = render_framework
         self._initialized = False
         self._modules_imported = False
         self._scene_path = Path(scene_path)
-        self.render_framework = render_framework
         self._window = None
 
         if not self.render_mode == RenderMode.NONE:
@@ -97,10 +97,24 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
                 "video.output_frames_per_second": 1 / time_step / frame_skip,
             }
 
+            # Set tha function that returns the rgb buffer
+            self._maybe_update_rgb_buffer = self._update_rgb_buffer
+
+            # Figure out what function returns the rgb data
             if self.render_mode == RenderMode.REMOTE:
-                self._maybe_update_rgb_buffer = self._update_rgb_buffer_remote
+                self._get_rgb = self.get_rgb_from_open_gl
             else:
-                self._maybe_update_rgb_buffer = self._update_rgb_buffer
+                if self.render_framework == RenderFramework.PYGLET:
+                    self._get_rgb = self.get_rgb_from_pyglet
+                elif self.render_framework == RenderFramework.PYGAME:
+                    self._get_rgb = self.get_rgb_from_pygame
+
+            # Figure out which window flip function to call
+            if self.render_framework == RenderFramework.PYGLET:
+                self._flip_window = self._flip_pyglet_window
+            elif self.render_framework == RenderFramework.PYGAME:
+                self._flip_window = self._flip_pygame_window
+
         else:
             self._maybe_update_rgb_buffer = lambda *args, **kwargs: None
 
@@ -176,10 +190,14 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
     def close(self) -> None:
         """Performs necessary cleanup when environment is no longer needed."""
-        if hasattr(self, "_window") and self.render_framework == RenderFramework.PYGLET:
-            self._window.close()
-        elif hasattr(self, "_window") and self.render_framework == RenderFramework.PYGAME:
-            self.pygame.quit()
+        if self._window is not None:
+            if self.render_framework == RenderFramework.PYGLET:
+                self._window.close()
+            elif self.render_framework == RenderFramework.PYGAME:
+                self.pygame.quit()
+            else:
+                raise RuntimeError(f"Cannot close window for unsupported render framework {self.render_framework}.")
+
     def seed(self, seed: Union[int, np.random.SeedSequence]) -> List[int]:
         """Sets random seed for numpy by creating a SeedSequence."""
         if isinstance(seed, np.random.SeedSequence):
@@ -206,7 +224,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
             self.camera_templates = importlib.import_module("sofa_env.sofa_templates.camera")
 
             if not self.render_mode == RenderMode.NONE:
-
                 if self.render_framework == RenderFramework.PYGLET:
                     self.pyglet = importlib.import_module("pyglet")
                     self.pyglet.options["vsync"] = False
@@ -214,8 +231,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
                 elif self.render_framework == RenderFramework.PYGAME:
                     self.pygame = importlib.import_module("pygame")
-
-
 
                 if self.render_mode == RenderMode.HEADLESS and self.render_framework == RenderFramework.PYGLET:
                     # Setting this object will determine which classes are used by pyglet as Display, Screen, and Window.
@@ -259,7 +274,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         # If we want to render any images, we have to make sure there is a camera
         if not self.render_mode == RenderMode.NONE:
-
             if not isinstance(self.scene_creation_result, dict) and "camera" in self.scene_creation_result and isinstance(self.scene_creation_result["camera"], (self.sofa_core.Object, self.camera_templates.Camera)):
                 raise KeyError("When creating a scene that should be rendered, please make sure createScene() returns a dictionary with a key value pair of 'camera': Union[Sofa.Core.Object, sofa_env.sofa_templates.camera.Camera].")
 
@@ -276,33 +290,23 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
                 self._init_pygame_window()
                 self._rgb_buffer = np.zeros_like(self.get_rgb_from_pygame(), dtype=np.uint8)
 
+    def _flip_pyglet_window(self):
+        """Flips the pyglet window."""
+        self._window.flip()
+
+    def _flip_pygame_window(self):
+        """Flips the pygame window."""
+        self.pygame.display.flip()
 
     def _update_rgb_buffer(self) -> np.ndarray:
-        """Updates the visuals in sofa, writes the rgb array to the envs rgb_buffer, flips the pyglet window, and returns the rgb array."""
+        """Updates the visuals in sofa, writes the rgb array to the envs rgb_buffer, flips the window, and returns the rgb array."""
         self._update_sofa_visuals()
 
-        if self.render_framework == RenderFramework.PYGLET:
-            rgb_array = self.get_rgb_from_pyglet()
-        if self.render_framework == RenderFramework.PYGAME:
-            rgb_array = self.get_rgb_from_pygame()
+        rgb_array = self._get_rgb()
 
         self._rgb_buffer[:] = rgb_array
-        if self.render_framework == RenderFramework.PYGLET:
-            self._window.flip()
-        elif self.render_framework == RenderFramework.PYGAME:
-            self.pygame.display.flip()
-        return rgb_array
 
-    def _update_rgb_buffer_remote(self) -> np.ndarray:
-        """Updates the visuals in sofa, writes the rgb array to the envs rgb_buffer, flips the pyglet window, and returns the rgb array."""
-        self._update_sofa_visuals()
-        rgb_array = self.get_rgb_from_open_gl_remote()
-        self._rgb_buffer[:] = rgb_array
-
-        if self.render_framework == RenderFramework.PYGLET:
-            self._window.flip()
-        elif self.render_framework == RenderFramework.PYGAME:
-             self.pygame.display.flip()
+        self._flip_window()
 
         return rgb_array
 
@@ -364,7 +368,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         self.opengl_gl.glMatrixMode(self.opengl_gl.GL_MODELVIEW)
         self.opengl_gl.glLoadIdentity()
 
-
     def _init_pygame_window(self):
         """Creates a pygame window."""
 
@@ -392,7 +395,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         )
         self.opengl_gl.glMatrixMode(self.opengl_gl.GL_MODELVIEW)
         self.opengl_gl.glLoadIdentity()
-
 
     def _update_sofa_visuals(self) -> None:
         """Calls sofa and opengl functions to update the rgb and depth information."""
@@ -422,22 +424,14 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         self.opengl_gl.glMultMatrixd(self._camera_object.getOpenGLModelViewMatrix())
         self.sofa_gl.draw(self._sofa_root_node)
 
-    def get_rgb_from_open_gl_remote(self) -> np.ndarray:
-        """Reads the rgb buffer from OpenGL and returns a copy."""
-        gl = self.opengl_gl
-        height = self._camera_object.heightViewport.value
-        width = self._camera_object.widthViewport.value
+    def get_rgb_from_pygame(self) -> np.ndarray:
+        """Reads the rgb buffer from pygame and returns a copy."""
+        rgb_array = self.pygame.surfarray.array3d(self._window)
+        return np.copy(np.flipud(rgb_array))
 
-        buffer = gl.glReadPixels(0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE)
-        image_array = np.fromstring(buffer, np.uint8)
-
-        if image_array != []:
-            image = image_array.reshape(height, width, 3)
-            image = np.flipud(image)[:, :, :3]
-        else:
-            image = np.zeros((height, width, 3))
-
-        return np.copy(image)
+    def get_depth_from_pygame(self) -> np.ndarray:
+        """TODO"""
+        raise NotImplementedError
 
     def get_rgb_from_pyglet(self) -> np.ndarray:
         """Reads the rgb buffer from pyglet and returns a copy.
@@ -454,12 +448,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         return np.copy(np.flipud(rgba_array)[:, :, :3])
 
-    def get_rgb_from_pygame(self) -> np.ndarray:
-        """Reads the rgb buffer from pygame and returns a copy."""
-
-        rgb_array = self.pygame.surfarray.array3d(self._window)
-        return np.copy(np.flipud(rgb_array))
-
     def get_depth_from_pyglet(self) -> np.ndarray:
         """Reads the depth buffer from pyglet and returns a copy.
 
@@ -473,6 +461,23 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         depth_array = depth_array.reshape((depth_buffer.height, depth_buffer.width, 1))
 
         return np.copy(np.flipud(depth_array))
+
+    def get_rgb_from_open_gl(self) -> np.ndarray:
+        """Reads the rgb buffer from OpenGL and returns a copy."""
+        gl = self.opengl_gl
+        height = self._camera_object.heightViewport.value
+        width = self._camera_object.widthViewport.value
+
+        buffer = gl.glReadPixels(0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE)
+        image_array = np.fromstring(buffer, np.uint8)
+
+        if image_array != []:
+            image = image_array.reshape(height, width, 3)
+            image = np.flipud(image)[:, :, :3]
+        else:
+            image = np.zeros((height, width, 3))
+
+        return np.copy(image)
 
     def get_depth_from_open_gl(self) -> np.ndarray:
         """Reads the depth buffer from OpenGL and returns a depth array with absolute distance to the camera values."""
