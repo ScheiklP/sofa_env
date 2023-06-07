@@ -373,7 +373,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         self.pygame.init()
         if not self.render_mode == RenderMode.NONE and self.render_mode == RenderMode.HEADLESS:
-            self._window = self.pygame.display.set_mode(((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value)), self.pygame.OPENGL | self.pygame.HIDDEN)
+            self._window = self.pygame.display.set_mode((1, 1), self.pygame.OPENGL | self.pygame.HIDDEN)
         else:
             self._window = self.pygame.display.set_mode((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value), self.pygame.DOUBLEBUF | self.pygame.OPENGL)
 
