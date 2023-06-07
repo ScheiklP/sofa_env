@@ -527,7 +527,7 @@ class TissueManipulationEnv(SofaEnv):
                 observation[:, :, :3] = maybe_rgb_observation
             else:
                 observation[:, :, :3] = self.overlay_target(maybe_rgb_observation, radius=int(round(self.observation_space.shape[0] / 64)))
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
             self._last_observation = observation
 
         return observation

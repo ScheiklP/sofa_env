@@ -372,7 +372,10 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         """Creates a pygame window."""
 
         self.pygame.init()
-        self._window = self.pygame.display.set_mode((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value), self.pygame.DOUBLEBUF | self.pygame.OPENGL)
+        if not self.render_mode == RenderMode.NONE and self.render_mode == RenderMode.HEADLESS:
+            self._window = self.pygame.display.set_mode(((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value)), self.pygame.OPENGL | self.pygame.HIDDEN)
+        else:
+            self._window = self.pygame.display.set_mode((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value), self.pygame.DOUBLEBUF | self.pygame.OPENGL)
 
         self.opengl_gl.glClear(self.opengl_gl.GL_COLOR_BUFFER_BIT | self.opengl_gl.GL_DEPTH_BUFFER_BIT)
         self.opengl_gl.glEnable(self.opengl_gl.GL_LIGHTING)
@@ -430,8 +433,25 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         return np.copy(np.flipud(rgb_array))
 
     def get_depth_from_pygame(self) -> np.ndarray:
-        """TODO"""
-        raise NotImplementedError
+        """Reads the rgb buffer from openGl for pygame and returns a copy."""
+
+        self.opengl_gl.glViewport(0, 0, self._window.get_width(), self._window.get_height())
+        depth_buffer = np.empty((self._window.get_height(), self._window.get_width()), dtype=np.float32)
+        self.opengl_gl.glReadPixels(0, 0, self._window.get_width(), self._window.get_height(), self.opengl_gl.GL_DEPTH_COMPONENT, self.opengl_gl.GL_FLOAT,
+                        depth_buffer)
+
+        depth_buffer = (depth_buffer * 255).astype(np.uint8)
+        depth_array = np.expand_dims(depth_buffer, axis=2)
+
+        return np.copy(np.flipud(depth_array))
+
+    def get_depth(self):
+        """get depth based on render frameworks (pyglet and pygame)"""
+
+        if self.render_framework == RenderFramework.PYGLET:
+            return self.get_depth_from_pyglet()
+        elif self.render_framework == RenderFramework.PYGAME:
+            return self.get_depth_from_pygame()
 
     def get_rgb_from_pyglet(self) -> np.ndarray:
         """Reads the rgb buffer from pyglet and returns a copy.

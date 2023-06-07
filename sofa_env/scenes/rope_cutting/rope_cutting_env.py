@@ -415,7 +415,7 @@ class RopeCuttingEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = maybe_rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
 
         else:
             state_dict = {}

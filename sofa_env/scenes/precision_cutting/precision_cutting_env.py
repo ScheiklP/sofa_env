@@ -471,10 +471,10 @@ class PrecisionCuttingEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = maybe_rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
         elif self.observation_type == ObservationType.DEPTH:
             observation = self.observation_space.sample()
-            observation[:] = self.get_depth_from_pyglet()
+            observation[:] = self.get_depth()
         else:
             observation = np.zeros(self.observation_space.shape)
             state_dict = {}

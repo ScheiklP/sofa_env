@@ -494,7 +494,7 @@ class PickAndPlaceEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = maybe_rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
         else:
             state_dict = {}
             state_dict["has_grasped"] = np.array(float(self.gripper.grasp_established))[None]  # make it a 1D array that can be concatenated

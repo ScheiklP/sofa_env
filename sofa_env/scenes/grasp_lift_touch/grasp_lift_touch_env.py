@@ -410,7 +410,7 @@ class GraspLiftTouchEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = image_observation.copy()
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
             return observation
         else:
             state_dict = {}

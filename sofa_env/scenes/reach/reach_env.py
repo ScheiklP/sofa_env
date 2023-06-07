@@ -337,21 +337,21 @@ class ReachEnv(SofaEnv):
             if self._observe_target_position:
                 observation = self.observation_space.sample()
                 observation["rgbd"][:, :, :3] = maybe_rgb_observation
-                observation["rgbd"][:, :, 3:] = self.get_depth_from_pyglet()
+                observation["rgbd"][:, :, 3:] = self.get_depth()
                 observation["target_position"][:] = self._normalize_position(self._visual_target.get_pose()[:3])
             else:
                 observation = self.observation_space.sample()
                 observation[:, :, :3] = maybe_rgb_observation
-                observation[:, :, 3:] = self.get_depth_from_pyglet()
+                observation[:, :, 3:] = self.get_depth()
 
         elif self._observation_type == ObservationType.DEPTH:
             if self._observe_target_position:
                 observation = self.observation_space.sample()
-                observation["depth"][:] = self.get_depth_from_pyglet()
+                observation["depth"][:] = self.get_depth()
                 observation["target_position"][:] = self._normalize_position(self._visual_target.get_pose()[:3])
             else:
                 observation = self.observation_space.sample()
-                observation[:] = self.get_depth_from_pyglet()
+                observation[:] = self.get_depth()
 
         else:
             observation = self.observation_space.sample()

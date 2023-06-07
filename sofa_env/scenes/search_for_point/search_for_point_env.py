@@ -614,7 +614,7 @@ class SearchForPointEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
         else:
             state_dict = {}
             state_dict["poi_position"] = self.poi.get_position()

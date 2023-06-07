@@ -567,12 +567,12 @@ class TissueRetractionEnv(SofaEnv):
             if self._observe_phase:
                 observation = self.observation_space.sample()
                 observation["rgbd"][:, :, :3] = maybe_rgb_observation
-                observation["rgbd"][:, :, 3:] = self.get_depth_from_pyglet()
+                observation["rgbd"][:, :, 3:] = self.get_depth()
                 observation["phase"] = np.array(self._phase.value, dtype=self.observation_space["phase"].dtype).reshape(self.observation_space["phase"].shape)
             else:
                 observation = self.observation_space.sample()
                 observation[:, :, :3] = maybe_rgb_observation
-                observation[:, :, 3:] = self.get_depth_from_pyglet()
+                observation[:, :, 3:] = self.get_depth()
         else:
             observation = self.observation_space.sample()
             end_effector_position = self.end_effector.get_pose()[:3]
