@@ -664,6 +664,7 @@ if __name__ == "__main__":
         observation_type=ObservationType.RGB,
         action_type=ActionType.CONTINUOUS,
         render_mode=RenderMode.HUMAN,
+        render_framework=RenderFramework.PYGAME,
         collision_punishment_mode=CollisionPunishmentMode.CONTACTDISTANCE,
         observe_phase_state=False,
         image_shape=(480, 480),

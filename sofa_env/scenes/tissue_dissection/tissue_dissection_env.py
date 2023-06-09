@@ -8,7 +8,7 @@ from pathlib import Path
 from functools import reduce
 
 from typing import Callable, Union, Tuple, Optional, List, Any, Dict
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 
 from sofa_env.scenes.tissue_dissection.sofa_objects.cauter import PivotizedCauter
 from sofa_env.sofa_templates.deformable import SimpleDeformableObject
@@ -48,6 +48,7 @@ class TissueDissectionEnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         maximum_state_velocity (Union[np.ndarray, float]): Velocity in deg/s for pts and mm/s for d in state space which are applied with a normalized action of value 1.
         discrete_action_magnitude (Union[np.ndarray, float]): Discrete change in state space in deg/s for pts and mm/s for d.
@@ -77,6 +78,7 @@ class TissueDissectionEnv(SofaEnv):
         frame_skip: int = 1,
         settle_steps: int = 50,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict: Dict[str, float] = {
             "unstable_deformation": -0.0,
             "distance_cauter_border_point": -0.0,
@@ -104,7 +106,6 @@ class TissueDissectionEnv(SofaEnv):
         randomize_cauter: bool = True,
         control_retraction_force: bool = False,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -124,6 +125,7 @@ class TissueDissectionEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -159,9 +161,7 @@ class TissueDissectionEnv(SofaEnv):
 
             if isinstance(discrete_action_magnitude, np.ndarray):
                 if not len(discrete_action_magnitude) == action_dimensionality * 2:
-                    raise ValueError(
-                        f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality * 2} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}."
-                    )
+                    raise ValueError(f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality * 2} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}.")
 
             # [step, 0, 0, ...], [-step, 0, 0, ...], [0, step, 0, ...], [0, -step, 0, ...]
             action_list = []

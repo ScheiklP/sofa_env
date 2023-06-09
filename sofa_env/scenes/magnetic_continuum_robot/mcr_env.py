@@ -5,7 +5,7 @@ import gym.spaces
 import numpy as np
 from collections import defaultdict
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.magnetic_continuum_robot.mcr_sim.mcr_controller_sofa import ControllerSofa
 
 HERE = Path(__file__).resolve().parent
@@ -49,13 +49,14 @@ class MCREnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         target_position (Optional[np.ndarray]): Target position of the catheter tip in the scene.
         env_type (EnvType): Whether to use the flat (``EnvType.FLAT``) or aortic (``EnvType.AORTIC``) scene.
         target_distance_threshold (float): Distance threshold for the reward function (default: 0.015).
         num_catheter_tracking_points (int): Number of points on the catheter to track (default: 4).
     """
-    
+
     def __init__(
         self,
         image_shape: Tuple[int, int] = (400, 400),
@@ -66,6 +67,7 @@ class MCREnv(SofaEnv):
         frame_skip: int = 1,
         settle_steps: int = 10,
         render_mode: RenderMode = RenderMode.HUMAN,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict={
             "tip_pos_distance_to_dest_pos": -0.0,
             "delta_tip_pos_distance_to_dest_pos": -0.0,
@@ -98,6 +100,7 @@ class MCREnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -162,7 +165,7 @@ class MCREnv(SofaEnv):
 
     def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
-        
+
         image_observation = super().step(action)
         observation = self._get_observation(image_observation)
         reward = self._get_reward()
@@ -173,7 +176,7 @@ class MCREnv(SofaEnv):
 
     def _get_observation(self, image_observation: Union[np.ndarray, None]) -> Union[np.ndarray, dict]:
         """Assembles the correct observation based on the ``ObservationType``."""
-        
+
         if self.observation_type == ObservationType.RGB:
             return image_observation
         elif self.observation_type == ObservationType.STATE:
@@ -196,7 +199,7 @@ class MCREnv(SofaEnv):
             - delta_tip_pos_distance_to_dest_pos (float): Change in distance between catheter tip and destination point
             - workspace_constraint_violation (bool): Whether the workspace constraint is violated
         """
-        
+
         reward_features = {}
         # Check if task is done
         if previous_reward_features["tip_pos_distance_to_dest_pos"] < self.target_distance_threshold:

@@ -9,7 +9,7 @@ from functools import reduce
 
 from typing import Callable, Union, Tuple, Optional, List, Any
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 
 from sofa_env.scenes.pick_and_place.scene_description import Peg
 from sofa_env.scenes.rope_threading.sofa_objects.gripper import ArticulatedGripper
@@ -55,6 +55,7 @@ class PickAndPlaceEnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         maximum_state_velocity (Union[np.ndarray, float]): Velocity in deg/s for pts and mm/s for d in state space which are applied with a normalized action of value 1.
         discrete_action_magnitude (Union[np.ndarray, float]): Discrete change in state space in deg/s for pts and mm/s for d.
@@ -80,6 +81,7 @@ class PickAndPlaceEnv(SofaEnv):
         frame_skip: int = 3,
         settle_steps: int = 20,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict={
             Phase.ANY: {
                 "lost_grasp": -10.0,
@@ -122,7 +124,6 @@ class PickAndPlaceEnv(SofaEnv):
         minimum_lift_height: float = 30.0,
         block_done_when_torus_unstable: bool = False,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -130,9 +131,7 @@ class PickAndPlaceEnv(SofaEnv):
         create_scene_kwargs["start_grasped"] = start_grasped
 
         if randomize_torus_position and start_grasped:
-            raise ValueError(
-                "If you want to skip the pick phase, and just place, the torus position should match the initial gripper position, thus randomize_torus_position and start_grasped should not both be True at the same time.\n{start_grasped=}\n{randomize_torus_position=}"
-            )
+            raise ValueError("If you want to skip the pick phase, and just place, the torus position should match the initial gripper position, thus randomize_torus_position and start_grasped should not both be True at the same time.\n{start_grasped=}\n{randomize_torus_position=}")
 
         # Whether to colorize the torus and pegs
         self.randomize_color = randomize_color
@@ -165,6 +164,7 @@ class PickAndPlaceEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -186,9 +186,7 @@ class PickAndPlaceEnv(SofaEnv):
 
             if isinstance(discrete_action_magnitude, np.ndarray):
                 if not len(discrete_action_magnitude) == action_dimensionality:
-                    raise ValueError(
-                        "If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}."
-                    )
+                    raise ValueError("If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}.")
 
             # [step, 0, 0, ...], [-step, 0, 0, ...], [0, step, 0, ...], [0, -step, 0, ...]
             action_list = []
@@ -460,7 +458,6 @@ class PickAndPlaceEnv(SofaEnv):
             reward_features["delta_torus_distance_to_active_pegs"] = np.min(reward_features["delta_torus_distance_to_active_pegs"])
 
         for key, value in reward_features.items():
-
             # Normalize distance and velocity features with the size of the workspace
             # and clip them to the size of the workspace (to catch invalid values that come from an unstable simulation)
             if "distance" in key or "velocity" in key:

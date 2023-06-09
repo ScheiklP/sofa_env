@@ -80,6 +80,7 @@ class TissueManipulationEnv(SofaEnv):
         action_type (ActionType): Specify discrete or continuous action space
         state_observation_space (Optional[gym.Space]): Specify dimensions of state space. Leave empty for automatic detection.
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         action_space (Optional[gym.spaces.Box]): An optional ``Box`` action space to set the limits for clipping.
         end_position_threshold (float): Distance to the ``end_position`` at which episode success is triggered (in meters [m]).
         maximum_robot_velocity (float): Maximum velocity of TGP in millimeters per second [mm/s].
@@ -106,6 +107,7 @@ class TissueManipulationEnv(SofaEnv):
         settle_steps: int = 20,
         action_type: ActionType = ActionType.CONTINUOUS,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         state_observation_space: Optional[gym.Space] = None,
         visual_target_position: Optional[np.ndarray] = None,
         action_space: Optional[gym.Space] = None,
@@ -131,7 +133,6 @@ class TissueManipulationEnv(SofaEnv):
         debug: bool = False,
         print_init_info: bool = False,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -148,6 +149,7 @@ class TissueManipulationEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -592,11 +594,11 @@ class TissueManipulationEnv(SofaEnv):
         }
 
         distance_to_target_position = self._calc_distance_to_target()
-        reward += self._reward_amount_dict["distance_to_target"] * self._reward_scaling_factor * distance_to_target_position ** self._distance_exponent
+        reward += self._reward_amount_dict["distance_to_target"] * self._reward_scaling_factor * distance_to_target_position**self._distance_exponent
 
         # Add distance to info dict
         self.reward_info["distance_to_target_position"] = distance_to_target_position
-        self.reward_info["distance_to_target_position_with_exponent"] = distance_to_target_position ** self._distance_exponent
+        self.reward_info["distance_to_target_position_with_exponent"] = distance_to_target_position**self._distance_exponent
 
         # Calculate if goal is reached
         if distance_to_target_position <= self._target_threshold:
@@ -704,7 +706,7 @@ class TissueManipulationEnv(SofaEnv):
             cv2.waitKey(1)
         elif self.render_framework == RenderFramework.PYGAME:
             img_bgr = self.pygame.surfarray.make_surface(img_bgr)
-            self._window.blit(img_bgr, (self._camera_object.heightViewport.value/2, self._camera_object.widthViewport.value/2))
+            self._window.blit(img_bgr, (self._camera_object.heightViewport.value / 2, self._camera_object.widthViewport.value / 2))
             self.pygame.display.flip()
 
 

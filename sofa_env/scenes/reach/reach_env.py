@@ -10,7 +10,7 @@ from functools import reduce
 
 from typing import Union, Tuple, Optional, Any, List, Callable
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.reach.sofa_objects.end_effector import EndEffector
 from sofa_env.sofa_templates.rigid import ControllableRigidObject
 
@@ -50,9 +50,9 @@ class ReachEnv(SofaEnv):
         discrete_action_magnitude (float): Discrete delta motion in millimeters per second applied to the end effector for the discrete action type.
         action_type (ActionType): Discrete or continuous actions to define the action space of the environment.
         render_mode (RenderMode): create a window (RenderMode.HUMAN) or run headless (RenderMode.HEADLESS).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         create_scene_kwargs (Optional[dict]): A dictionary to pass additional keyword arguments to the ``createScene`` function.
-        render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
         on_reset_callbacks (Optional[List[Callable]]): A list of callables to call after the environment is reset.
         sphere_radius (float): Radius of the target sphere in meters.
     """
@@ -71,6 +71,7 @@ class ReachEnv(SofaEnv):
         discrete_action_magnitude: float = 10.0,
         action_type: ActionType = ActionType.CONTINUOUS,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict={
             "distance_to_target": -0.0,
             "delta_distance_to_target": -0.0,
@@ -82,7 +83,6 @@ class ReachEnv(SofaEnv):
         on_reset_callbacks: Optional[List[Callable]] = None,
         sphere_radius: float = 0.008,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -96,6 +96,7 @@ class ReachEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -113,9 +114,7 @@ class ReachEnv(SofaEnv):
 
             if isinstance(discrete_action_magnitude, np.ndarray):
                 if not len(discrete_action_magnitude) == action_dimensionality:
-                    raise ValueError(
-                        "If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}."
-                    )
+                    raise ValueError("If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}.")
 
             # [step, 0, 0, ...], [-step, 0, 0, ...], [0, step, 0, ...], [0, -step, 0, ...]
             action_list = []

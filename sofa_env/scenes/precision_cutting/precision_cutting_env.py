@@ -8,7 +8,7 @@ import numpy as np
 import gym
 import gym.spaces
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.precision_cutting.sofa_objects.gripper import ArticulatedGripper
 from sofa_env.sofa_templates.camera import Camera
 from sofa_env.utils.math_helper import euler_angles_to_quaternion, quaternion_to_euler_angles
@@ -50,6 +50,7 @@ class PrecisionCuttingEnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         maximum_state_velocity (Union[np.ndarray, float]): Velocity in deg/s for pts and mm/s for d in state space which are applied with a normalized action of value 1.
         maximum_cartesian_velocity  (Union[np.ndarray, float]): Velocity in mm/s for d in Cartesian space which are applied with a normalized action of value 1.
@@ -77,6 +78,7 @@ class PrecisionCuttingEnv(SofaEnv):
         frame_skip: int = 10,
         settle_steps: int = 50,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict: Dict[str, float] = {
             "unstable_deformation": -0.0,
             "distance_scissors_cutting_path": -0.0,
@@ -133,6 +135,7 @@ class PrecisionCuttingEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -173,9 +176,7 @@ class PrecisionCuttingEnv(SofaEnv):
                 elif num_steps == 2 * action_dims:
                     action_list = np.stack([np.diag(steps[:action_dims]), np.diag(steps[action_dims:])], axis=1)
                 else:
-                    raise ValueError(
-                        f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dims} or {action_dims * 2} as discrete_action_magnitude. Received {steps=} with length {num_steps}."
-                    )
+                    raise ValueError(f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dims} or {action_dims * 2} as discrete_action_magnitude. Received {steps=} with length {num_steps}.")
             else:
                 steps = np.full(action_dims, discrete_action_magnitude)
                 action_list = np.stack([np.diag(steps), -np.diag(steps)], axis=1)
@@ -238,7 +239,6 @@ class PrecisionCuttingEnv(SofaEnv):
         self.on_reset_callbacks = on_reset_callbacks if on_reset_callbacks is not None else []
 
     def _init_sim(self) -> None:
-
         if self.seed_sequence is None:
             self.seed_sequence = np.random.SeedSequence()
             self.rng = np.random.default_rng(self.seed_sequence)
