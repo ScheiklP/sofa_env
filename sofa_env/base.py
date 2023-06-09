@@ -232,11 +232,14 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
                 elif self.render_framework == RenderFramework.PYGAME:
                     self.pygame = importlib.import_module("pygame")
 
-                if self.render_mode == RenderMode.HEADLESS and self.render_framework == RenderFramework.PYGLET:
-                    # Setting this object will determine which classes are used by pyglet as Display, Screen, and Window.
-                    # If headless is True, it will use EGL and HeadlessDisplay, HeadlessScreen, ...
-                    # If not, it will determine the correct values based on the OS (Linux, Windows, Mac)
-                    self.pyglet.options["headless"] = True
+                if self.render_mode == RenderMode.HEADLESS:
+                    if self.render_framework == RenderFramework.PYGLET:
+                        # Setting this object will determine which classes are used by pyglet as Display, Screen, and Window.
+                        # If headless is True, it will use EGL and HeadlessDisplay, HeadlessScreen, ...
+                        # If not, it will determine the correct values based on the OS (Linux, Windows, Mac)
+                        self.pyglet.options["headless"] = True
+                    elif self.render_framework == RenderFramework.PYGAME:
+                        raise NotImplementedError("Headless rendering is not supported for PyGame, as PyGame currently does not support EGL. See https://github.com/ScheiklP/sofa_env/issues/7.")
 
                 self.sofa_gl = importlib.import_module("Sofa.SofaGL")
                 self.opengl_gl = importlib.import_module("OpenGL.GL")
@@ -372,10 +375,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         """Creates a pygame window."""
 
         self.pygame.init()
-        if not self.render_mode == RenderMode.NONE and self.render_mode == RenderMode.HEADLESS:
-            self._window = self.pygame.display.set_mode((1, 1), self.pygame.OPENGL | self.pygame.HIDDEN)
-        else:
-            self._window = self.pygame.display.set_mode((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value), self.pygame.DOUBLEBUF | self.pygame.OPENGL)
+        self._window = self.pygame.display.set_mode((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value), self.pygame.DOUBLEBUF | self.pygame.OPENGL)
 
         self.opengl_gl.glClear(self.opengl_gl.GL_COLOR_BUFFER_BIT | self.opengl_gl.GL_DEPTH_BUFFER_BIT)
         self.opengl_gl.glEnable(self.opengl_gl.GL_LIGHTING)
@@ -437,8 +437,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         self.opengl_gl.glViewport(0, 0, self._window.get_width(), self._window.get_height())
         depth_buffer = np.empty((self._window.get_height(), self._window.get_width()), dtype=np.float32)
-        self.opengl_gl.glReadPixels(0, 0, self._window.get_width(), self._window.get_height(), self.opengl_gl.GL_DEPTH_COMPONENT, self.opengl_gl.GL_FLOAT,
-                        depth_buffer)
+        self.opengl_gl.glReadPixels(0, 0, self._window.get_width(), self._window.get_height(), self.opengl_gl.GL_DEPTH_COMPONENT, self.opengl_gl.GL_FLOAT, depth_buffer)
 
         depth_buffer = (depth_buffer * 255).astype(np.uint8)
         depth_array = np.expand_dims(depth_buffer, axis=2)
