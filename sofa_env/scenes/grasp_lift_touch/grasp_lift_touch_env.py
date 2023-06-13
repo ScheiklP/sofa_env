@@ -10,7 +10,7 @@ from functools import reduce
 import Sofa
 import Sofa.Core
 
-from sofa_env.base import RenderMode, SofaEnv
+from sofa_env.base import RenderMode, SofaEnv, RenderFramework
 from sofa_env.scenes.grasp_lift_touch.sofa_objects.liver import Liver
 from sofa_env.utils.camera import world_to_pixel_coordinates
 from sofa_env.utils.math_helper import distance_between_line_segments, farthest_point_sampling
@@ -65,6 +65,7 @@ class Phase(Enum):
 @unique
 class CollisionEffect(Enum):
     """Collision effect specifies how collisions are punished. Proportial to the number of collisions, constant for collision/not collison, or ending the episode."""
+
     PROPORTIONAL = 0
     CONSTANT = 1
     FAILURE = 2
@@ -93,6 +94,7 @@ class GraspLiftTouchEnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         start_in_phase (Phase): The phase the environment starts in for the reset.
         end_in_phase (Phase): The phase the environment ends in for the done signal.
         tool_collision_distance (float): Distance in mm at which the tool is considered to be in collision with each other.
@@ -122,6 +124,7 @@ class GraspLiftTouchEnv(SofaEnv):
         frame_skip: int = 1,
         settle_steps: int = 10,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         start_in_phase: Phase = Phase.GRASP,
         end_in_phase: Phase = Phase.DONE,
         tool_collision_distance: float = 5.0,
@@ -189,6 +192,7 @@ class GraspLiftTouchEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -296,9 +300,7 @@ class GraspLiftTouchEnv(SofaEnv):
                 self._scale_action = self._scale_discrete_action
                 if isinstance(discrete_action_magnitude, np.ndarray):
                     if not len(discrete_action_magnitude) == action_dimensionality:
-                        raise ValueError(
-                            "If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}."
-                        )
+                        raise ValueError("If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}.")
 
                 # [step, 0, 0, ...], [-step, 0, 0, ...], [0, step, 0, ...], [0, -step, 0, ...]
                 action_list = []
@@ -410,7 +412,7 @@ class GraspLiftTouchEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = image_observation.copy()
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
             return observation
         else:
             state_dict = {}
@@ -542,9 +544,7 @@ class GraspLiftTouchEnv(SofaEnv):
 
         self.reward_features["cauter_activation_in_target"] = (self.reward_features["distance_cauter_target"] < self.goal_tolerance) and self.cauter.active
         # Restrict grasps to ones that are performed on the infundibulum of the gallbladder
-        if np.any(np.in1d(self.gripper.grasping_force_field["shaft"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)) and np.any(
-            np.in1d(self.gripper.grasping_force_field["jaw"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)
-        ):
+        if np.any(np.in1d(self.gripper.grasping_force_field["shaft"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)) and np.any(np.in1d(self.gripper.grasping_force_field["jaw"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)):
             self.reward_features["gallblader_is_grasped"] = self.gripper.grasp_established
         else:
             self.reward_features["gallblader_is_grasped"] = False
@@ -616,7 +616,6 @@ class GraspLiftTouchEnv(SofaEnv):
             reward_features["failed_task"] = reward_features["failed_task"] | any(np.fromiter(collision_reward_features.values(), dtype=int) > 0)
 
         for key, value in reward_features.items():
-
             # Normalize distance and velocity features with the size of the workspace
             if "distance" in key or "velocity" in key:
                 value = self._distance_normalization_factor * value
@@ -642,7 +641,6 @@ class GraspLiftTouchEnv(SofaEnv):
         return float(reward)
 
     def _get_reward_features(self, image: np.ndarray, previous_reward_features: dict) -> dict:
-
         reward_features = {}
 
         # Collisions
@@ -680,9 +678,7 @@ class GraspLiftTouchEnv(SofaEnv):
 
         # Grasping
         # Restrict grasps to ones that are performed on the infundibulum of the gallbladder
-        if np.any(np.in1d(self.gripper.grasping_force_field["shaft"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)) and np.any(
-            np.in1d(self.gripper.grasping_force_field["jaw"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)
-        ):
+        if np.any(np.in1d(self.gripper.grasping_force_field["shaft"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)) and np.any(np.in1d(self.gripper.grasping_force_field["jaw"].points.array(), self.gallbladder_indices_in_grasping_roi_collision)):
             reward_features["gallblader_is_grasped"] = self.gripper.grasp_established
             reward_features["new_grasp_on_gallbladder"] = reward_features["gallblader_is_grasped"] and not previous_reward_features["gallblader_is_grasped"]
         else:

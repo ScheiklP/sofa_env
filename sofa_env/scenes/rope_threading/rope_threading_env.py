@@ -8,7 +8,7 @@ from pathlib import Path
 
 from typing import Callable, Union, Tuple, Optional, List, Any, Dict
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.rope_threading.sofa_objects.eye import Eye, EyeStates
 from sofa_env.scenes.rope_threading.sofa_objects.gripper import ArticulatedGripper
 from sofa_env.scenes.rope_threading.sofa_objects.transfer_rope import TransferRope
@@ -115,6 +115,7 @@ class RopeThreadingEnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         maximum_state_velocity (Union[np.ndarray, float]): Velocity in deg/s for pts and angle, and mm/s for d in state space which are applied with a normalized action of value 1.
         fraction_of_rope_to_pass (float): Fraction of rope to pass through an eye to mark it as done.
@@ -136,6 +137,7 @@ class RopeThreadingEnv(SofaEnv):
         frame_skip: int = 3,
         settle_steps: int = 50,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict={
             "passed_eye": 1.0,
             "lost_eye": -2.0,  # more than passed_eye
@@ -166,7 +168,6 @@ class RopeThreadingEnv(SofaEnv):
         action_type: ActionType = ActionType.CONTINUOUS,
         num_rope_tracking_points: int = -1,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -177,6 +178,7 @@ class RopeThreadingEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -673,7 +675,7 @@ class RopeThreadingEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = maybe_rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
 
         else:
             state_dict = {}
@@ -694,7 +696,7 @@ class RopeThreadingEnv(SofaEnv):
             state_dict["active_eye_pose"] = np.zeros(4)
             state_dict["active_eye_pose"][:3] = self.eyes[self.active_index].center_pose[:3]
             state_dict["active_eye_pose"][-1] = self.eyes[self.active_index].rotation
-            observation = np.concatenate(tuple(state_dict.values()),  dtype=self.observation_space.dtype)
+            observation = np.concatenate(tuple(state_dict.values()), dtype=self.observation_space.dtype)
             observation = np.where(np.isnan(observation), 1.0 / self._distance_normalization_factor, observation)
             # Clip observation values to 10 times the workspace size.
             observation = np.clip(observation, -10.0 / self._distance_normalization_factor, 10.0 / self._distance_normalization_factor)

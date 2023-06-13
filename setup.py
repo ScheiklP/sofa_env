@@ -16,6 +16,7 @@ setup(
         "numpy",
         "gym==0.21.0",
         "pyglet==1.5.21",
+        "pygame",
         "PyOpenGL==3.1.5",
         "PyOpenGL-accelerate==3.1.5",
         "Sphinx",

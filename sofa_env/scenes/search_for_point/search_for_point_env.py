@@ -14,7 +14,7 @@ from functools import reduce
 import Sofa
 import Sofa.Core
 
-from sofa_env.base import RenderMode, SofaEnv
+from sofa_env.base import RenderMode, SofaEnv, RenderFramework
 from sofa_env.sofa_templates.camera import PivotizedCamera
 from sofa_env.sofa_templates.rigid import PivotizedArticulatedInstrument
 
@@ -63,6 +63,7 @@ class SearchForPointEnv(SofaEnv):
     Args:
         image_shape (Tuple[int, int]): Height and Width of the rendered images.
         render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         time_step (float): size of simulation time step in seconds (default: 0.01).
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         scene_path (Union[str, Path]): Path to the scene description script that contains this environment's ``createScene`` function.
@@ -87,6 +88,7 @@ class SearchForPointEnv(SofaEnv):
         self,
         image_shape: Tuple[int, int] = (84, 84),
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         observation_type: ObservationType = ObservationType.RGB,
         time_step: float = 0.1,
         frame_skip: int = 3,
@@ -127,7 +129,6 @@ class SearchForPointEnv(SofaEnv):
         individual_agents: bool = False,
         cauter_activation: bool = False,
     ):
-
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
         # Pass image shape to the scene creation function
@@ -183,6 +184,7 @@ class SearchForPointEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -218,13 +220,9 @@ class SearchForPointEnv(SofaEnv):
                         self.cauter_max_state_velocity = np.append(self.cauter_max_state_velocity, 1.0 / self.time_step)
                 else:
                     if self.cauter_activation:
-                        raise ValueError(
-                            f"Invalid maximum_state_velocity array {maximum_state_velocity=} of length {len(maximum_state_velocity)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality - 1}"
-                        )
+                        raise ValueError(f"Invalid maximum_state_velocity array {maximum_state_velocity=} of length {len(maximum_state_velocity)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality - 1}")
                     else:
-                        raise ValueError(
-                            f"Invalid maximum_state_velocity array {maximum_state_velocity=} of length {len(maximum_state_velocity)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality}"
-                        )
+                        raise ValueError(f"Invalid maximum_state_velocity array {maximum_state_velocity=} of length {len(maximum_state_velocity)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality}")
             elif isinstance(maximum_state_velocity, float):
                 self.camera_max_state_velocity = maximum_state_velocity
                 # The activation of the cauter action is scaled to fall into [-1, 1]
@@ -236,9 +234,7 @@ class SearchForPointEnv(SofaEnv):
         else:
             if isinstance(maximum_state_velocity, np.ndarray):
                 if not len(maximum_state_velocity) == camera_action_dimensionality:
-                    raise ValueError(
-                        f"If you want to use individual maximal state limits, please pass an array of length {camera_action_dimensionality} as maximum_state_velocity. Received {maximum_state_velocity=} with lenght {len(maximum_state_velocity)}."
-                    )
+                    raise ValueError(f"If you want to use individual maximal state limits, please pass an array of length {camera_action_dimensionality} as maximum_state_velocity. Received {maximum_state_velocity=} with lenght {len(maximum_state_velocity)}.")
             self.camera_max_state_velocity = maximum_state_velocity
             self.cauter_max_state_velocity = np.NaN
 
@@ -287,13 +283,9 @@ class SearchForPointEnv(SofaEnv):
 
                 else:
                     if self.cauter_activation:
-                        raise ValueError(
-                            f"Invalid discrete_action_magnitude array {discrete_action_magnitude=} of length {len(discrete_action_magnitude)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality - 1}"
-                        )
+                        raise ValueError(f"Invalid discrete_action_magnitude array {discrete_action_magnitude=} of length {len(discrete_action_magnitude)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality - 1}")
                     else:
-                        raise ValueError(
-                            f"Invalid discrete_action_magnitude array {discrete_action_magnitude=} of length {len(discrete_action_magnitude)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality}"
-                        )
+                        raise ValueError(f"Invalid discrete_action_magnitude array {discrete_action_magnitude=} of length {len(discrete_action_magnitude)}. Length needs to be {camera_action_dimensionality} or {camera_action_dimensionality + cauter_action_dimensionality}")
             elif isinstance(discrete_action_magnitude, float):
                 discrete_action_magnitude_camera = discrete_action_magnitude
                 discrete_action_magnitude_cauter = np.array([discrete_action_magnitude] * cauter_action_dimensionality)
@@ -614,7 +606,7 @@ class SearchForPointEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
         else:
             state_dict = {}
             state_dict["poi_position"] = self.poi.get_position()

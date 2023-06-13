@@ -10,7 +10,7 @@ from pathlib import Path
 from collections import deque
 from typing import Union, Tuple, Optional, Any, List, Dict
 
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.utils.camera import world_to_pixel_coordinates
 
 from sofa_env.scenes.tissue_manipulation.sofa_robot_functions import WorkspaceType, Workspace
@@ -80,6 +80,7 @@ class TissueManipulationEnv(SofaEnv):
         action_type (ActionType): Specify discrete or continuous action space
         state_observation_space (Optional[gym.Space]): Specify dimensions of state space. Leave empty for automatic detection.
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         action_space (Optional[gym.spaces.Box]): An optional ``Box`` action space to set the limits for clipping.
         end_position_threshold (float): Distance to the ``end_position`` at which episode success is triggered (in meters [m]).
         maximum_robot_velocity (float): Maximum velocity of TGP in millimeters per second [mm/s].
@@ -106,6 +107,7 @@ class TissueManipulationEnv(SofaEnv):
         settle_steps: int = 20,
         action_type: ActionType = ActionType.CONTINUOUS,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         state_observation_space: Optional[gym.Space] = None,
         visual_target_position: Optional[np.ndarray] = None,
         action_space: Optional[gym.Space] = None,
@@ -131,7 +133,6 @@ class TissueManipulationEnv(SofaEnv):
         debug: bool = False,
         print_init_info: bool = False,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -148,6 +149,7 @@ class TissueManipulationEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -527,7 +529,7 @@ class TissueManipulationEnv(SofaEnv):
                 observation[:, :, :3] = maybe_rgb_observation
             else:
                 observation[:, :, :3] = self.overlay_target(maybe_rgb_observation, radius=int(round(self.observation_space.shape[0] / 64)))
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
             self._last_observation = observation
 
         return observation
@@ -592,11 +594,11 @@ class TissueManipulationEnv(SofaEnv):
         }
 
         distance_to_target_position = self._calc_distance_to_target()
-        reward += self._reward_amount_dict["distance_to_target"] * self._reward_scaling_factor * distance_to_target_position ** self._distance_exponent
+        reward += self._reward_amount_dict["distance_to_target"] * self._reward_scaling_factor * distance_to_target_position**self._distance_exponent
 
         # Add distance to info dict
         self.reward_info["distance_to_target_position"] = distance_to_target_position
-        self.reward_info["distance_to_target_position_with_exponent"] = distance_to_target_position ** self._distance_exponent
+        self.reward_info["distance_to_target_position_with_exponent"] = distance_to_target_position**self._distance_exponent
 
         # Calculate if goal is reached
         if distance_to_target_position <= self._target_threshold:
@@ -664,8 +666,10 @@ class TissueManipulationEnv(SofaEnv):
             distance_to_show = self.reward_info["distance_to_target_position"]
             if distance_to_show is None:
                 distance_to_show = -1.0
-
-            self._window.set_caption(f"D:{distance_to_show:.5f}")
+            if self.render_framework == RenderFramework.PYGLET:
+                self._window.set_caption(f"D:{distance_to_show:.5f}")
+            elif self.render_framework == RenderFramework.PYGAME:
+                self.pygame.display.set_caption(f"D:{distance_to_show:.5f}")
 
     def calculate_smoothness(self, trajectory: List, scaling_factor: float = 1e3) -> float:
         """Calculate 2nd order gradient for x and z direction respectively. Then computes Mean Square of Gradients."""
@@ -696,8 +700,14 @@ class TissueManipulationEnv(SofaEnv):
             return None
 
         img_bgr = cv2.cvtColor(observation, cv2.COLOR_RGB2BGR)
-        cv2.imshow(f"Sofa_{id(self)}", img_bgr)
-        cv2.waitKey(1)
+
+        if self.render_framework == RenderFramework.PYGLET:
+            cv2.imshow(f"Sofa_{id(self)}", img_bgr)
+            cv2.waitKey(1)
+        elif self.render_framework == RenderFramework.PYGAME:
+            img_bgr = self.pygame.surfarray.make_surface(img_bgr)
+            self._window.blit(img_bgr, (self._camera_object.heightViewport.value / 2, self._camera_object.widthViewport.value / 2))
+            self.pygame.display.flip()
 
 
 if __name__ == "__main__":

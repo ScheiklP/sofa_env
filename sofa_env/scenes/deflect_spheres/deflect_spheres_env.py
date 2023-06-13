@@ -8,7 +8,7 @@ from pathlib import Path
 from functools import reduce
 
 from typing import Callable, Union, Tuple, Optional, List, Any, Dict
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.deflect_spheres.sofa_objects.post import Post, State
 
 from sofa_env.scenes.tissue_dissection.sofa_objects.cauter import PivotizedCauter
@@ -54,6 +54,7 @@ class DeflectSpheresEnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         maximum_state_velocity (Union[np.ndarray, float]): Velocity in deg/s for pts and mm/s for d in state space which are applied with a normalized action of value 1.
         discrete_action_magnitude (Union[np.ndarray, float]): Discrete change in state space in deg/s for pts and mm/s for d.
@@ -78,6 +79,7 @@ class DeflectSpheresEnv(SofaEnv):
         frame_skip: int = 1,
         settle_steps: int = 10,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict={
             "action_violated_cartesian_workspace": -0.0,
             "action_violated_state_limits": -0.0,
@@ -102,7 +104,6 @@ class DeflectSpheresEnv(SofaEnv):
         mode: Mode = Mode.WITH_REPLACEMENT,
         allow_deflection_with_instrument_shaft: bool = False,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -131,6 +132,7 @@ class DeflectSpheresEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -170,12 +172,9 @@ class DeflectSpheresEnv(SofaEnv):
                 self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
 
         else:
-
             if isinstance(discrete_action_magnitude, np.ndarray):
                 if not len(discrete_action_magnitude) == 8:
-                    raise ValueError(
-                        f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length 8 as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}."
-                    )
+                    raise ValueError(f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length 8 as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}.")
 
             self._scale_action = self._scale_discrete_action
 
@@ -382,7 +381,6 @@ class DeflectSpheresEnv(SofaEnv):
         reward_features = self._get_reward_features(self.reward_features)
 
         if reward_features["done_with_active_sphere"]:
-
             # Increase couter for current number of performed deflections
             self.num_deflections += 1
 
@@ -457,7 +455,7 @@ class DeflectSpheresEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = maybe_rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
         else:
             state_dict = {}
             state_dict["sphere_positions"] = np.asarray([post.get_sphere_position() for post in self.posts]).ravel()

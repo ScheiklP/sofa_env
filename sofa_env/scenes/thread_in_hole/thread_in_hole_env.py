@@ -8,7 +8,7 @@ from pathlib import Path
 from functools import reduce
 
 from typing import Callable, Union, Tuple, Optional, List, Any, Dict
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.ligating_loop.sofa_objects.cavity import Cavity
 
 from sofa_env.scenes.rope_threading.sofa_objects.gripper import ArticulatedGripper
@@ -48,6 +48,7 @@ class ThreadInHoleEnv(SofaEnv):
         frame_skip (int): number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
+        render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         maximum_state_velocity (Union[np.ndarray, float]): Velocity in deg/s for pts and mm/s for d in state space which are applied with a normalized action of value 1.
         discrete_action_magnitude (Union[np.ndarray, float]): Discrete change in state space in deg/s for pts and mm/s for d.
@@ -74,6 +75,7 @@ class ThreadInHoleEnv(SofaEnv):
         frame_skip: int = 3,
         settle_steps: int = 50,
         render_mode: RenderMode = RenderMode.HEADLESS,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict={
             "thread_tip_distance_to_hole": -0.0,
             "delta_thread_tip_distance_to_hole": -0.0,
@@ -103,7 +105,6 @@ class ThreadInHoleEnv(SofaEnv):
         simple_success_check: bool = False,
         insertion_ratio_threshold: float = 0.5,
     ) -> None:
-
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
@@ -118,6 +119,7 @@ class ThreadInHoleEnv(SofaEnv):
             time_step=time_step,
             frame_skip=frame_skip,
             render_mode=render_mode,
+            render_framework=render_framework,
             create_scene_kwargs=create_scene_kwargs,
         )
 
@@ -424,10 +426,10 @@ class ThreadInHoleEnv(SofaEnv):
         elif self.observation_type == ObservationType.RGBD:
             observation = self.observation_space.sample()
             observation[:, :, :3] = maybe_rgb_observation
-            observation[:, :, 3:] = self.get_depth_from_pyglet()
+            observation[:, :, 3:] = self.get_depth()
         elif self.observation_type == ObservationType.DEPTH:
             observation = self.observation_space.sample()
-            observation[:] = self.get_depth_from_pyglet()
+            observation[:] = self.get_depth()
         else:
             state_dict = {}
             state_dict["ptsd_state"] = self.gripper.get_state()

@@ -2,7 +2,7 @@ import gym.spaces
 import numpy as np
 
 from pathlib import Path
-from sofa_env.base import SofaEnv, RenderMode
+from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from typing import Optional, Tuple, Union
 
 
@@ -15,6 +15,7 @@ class ControllableEnv(SofaEnv):
         render_mode: RenderMode = RenderMode.HUMAN,
         create_scene_kwargs: Optional[dict] = None,
         maximum_velocity: float = 50.0,
+        render_framework: RenderFramework = RenderFramework.PYGLET,
     ) -> None:
         super().__init__(
             scene_path,
@@ -22,6 +23,7 @@ class ControllableEnv(SofaEnv):
             frame_skip=frame_skip,
             render_mode=render_mode,
             create_scene_kwargs=create_scene_kwargs,
+            render_framework=render_framework,
         )
 
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
@@ -50,7 +52,6 @@ class ControllableEnv(SofaEnv):
 
 
 if __name__ == "__main__":
-
     here = Path(__file__).resolve().parent
     scene_description = here / Path("scene_description.py")
 
