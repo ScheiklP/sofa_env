@@ -1,10 +1,11 @@
 import numpy as np
 from numba import njit
+from numpy.random import Generator
 
 
 @njit
-def farthest_point_sampling(points: np.ndarray, num_samples: int) -> np.ndarray:
-    starting_point_index = np.random.randint(points.shape[0])
+def farthest_point_sampling(points: np.ndarray, num_samples: int, rng: Generator) -> np.ndarray:
+    starting_point_index = rng.integers(low=0, high=points.shape[0])
     sampled_indices = np.zeros(num_samples, dtype=np.uint16)
     sampled_points = np.zeros((num_samples, 3), dtype=np.float32)
     num_points = points.shape[0]

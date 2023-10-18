@@ -109,12 +109,12 @@ Clone the SOFA repository
    mkdir -p $FOLDER_TARGET
    git clone https://github.com/sofa-framework/sofa.git $FOLDER_SRC
    cd $FOLDER_SRC
-   git checkout e74b94848af09536873d1c7eb291a5e742fc6077
+   git checkout v23.06
    cd $FOLDER_SP3
    git init
    git remote add origin https://github.com/sofa-framework/SofaPython3.git
    git pull origin master
-   git checkout 15bc9725e85b282ce97738266e9849ca1b9c1602
+   git checkout 5a7371616fe8914530d44bf25ea6b724a6b1a08e
 
 .. _cmake:
 
@@ -164,12 +164,6 @@ Compile SOFA
    echo "" | tee -a $FOLDER_TARGET/install/lib/plugin_list.conf.default
    echo "$FOLDER_TARGET/install/plugins/SofaPython3/lib/libSofaPython3.so 1.0" | tee -a $FOLDER_TARGET/install/lib/plugin_list.conf.default
 
-.. note::
-
-   The last checked commits / tags for SOFA and SofaPython3 are
-
-   * SOFA: e41f341feb82351c00a0b9b7b94e9035a389e346
-   * SP3: 15bc9725e85b282ce97738266e9849ca1b9c1602
 
 .. warning::
 

@@ -1,6 +1,6 @@
 import cv2
-import gym
-import gym.spaces
+import gymnasium as gym
+import gymnasium.spaces as spaces
 import time
 import pprint
 import numpy as np
@@ -78,10 +78,10 @@ class TissueManipulationEnv(SofaEnv):
         frame_skip (int): Number of simulation time steps taken (call ``_do_action`` and advance simulation) each time step is called (default: 1).
         settle_steps (int): How many steps to simulate without returning an observation after resetting the environment.
         action_type (ActionType): Specify discrete or continuous action space
-        state_observation_space (Optional[gym.Space]): Specify dimensions of state space. Leave empty for automatic detection.
+        state_observation_space (Optional[gymnasium.Space]): Specify dimensions of state space. Leave empty for automatic detection.
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
         render_framework (RenderFramework): choose between pyglet and pygame for rendering
-        action_space (Optional[gym.spaces.Box]): An optional ``Box`` action space to set the limits for clipping.
+        action_space (Optional[gymnasium.spaces.Box]): An optional ``Box`` action space to set the limits for clipping.
         end_position_threshold (float): Distance to the ``end_position`` at which episode success is triggered (in meters [m]).
         maximum_robot_velocity (float): Maximum velocity of TGP in millimeters per second [mm/s].
         squared_distance (float): Use squared distance in loss calculation.
@@ -162,9 +162,9 @@ class TissueManipulationEnv(SofaEnv):
         dim_action = self._workspace_type.value[-1]
         if action_type == ActionType.CONTINUOUS:
             if action_space is None:
-                action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(dim_action,), dtype=np.float64)
+                action_space = spaces.Box(low=-1.0, high=1.0, shape=(dim_action,), dtype=np.float64)
             else:
-                if type(action_space) != gym.spaces.Box:
+                if type(action_space) != spaces.Box:
                     raise ValueError(f"Specified wrong action_space {action_space} for action_type == ActionType.CONTINUOUS")
                 if action_space.shape != (dim_action,):
                     raise ValueError(f"Specified wrong action dim {action_space.shape} for workspace dim = {(dim_action,)}")
@@ -172,10 +172,10 @@ class TissueManipulationEnv(SofaEnv):
 
         elif action_type == ActionType.DISCRETE:
             if action_space is None:
-                action_space = gym.spaces.Discrete(dim_action * 2 + 1)
+                action_space = spaces.Discrete(dim_action * 2 + 1)
             else:
-                if not (isinstance(action_space, gym.spaces.Discrete) and action_space.n == dim_action * 2 + 1):
-                    raise ValueError(f"If setting a manual discrete action space, please pass it as a gym.spaces.Discrete with {dim_action * 2 + 1} elements.")
+                if not (isinstance(action_space, spaces.Discrete) and action_space.n == dim_action * 2 + 1):
+                    raise ValueError(f"If setting a manual discrete action space, please pass it as a gymnasium.spaces.Discrete with {dim_action * 2 + 1} elements.")
 
             self._scale_action = self._scale_discrete_action
 
@@ -211,17 +211,17 @@ class TissueManipulationEnv(SofaEnv):
                 # TTP: 3
                 # IDP: 3
                 dim_states = 3 + 3 + 3
-                observation_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(dim_states,), dtype=np.float64)
+                observation_space = spaces.Box(low=-1.0, high=1.0, shape=(dim_states,), dtype=np.float64)
             else:
                 observation_space = state_observation_space
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         # Depth Image observations
         elif observation_type == ObservationType.RGBD:
-            observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -292,11 +292,6 @@ class TissueManipulationEnv(SofaEnv):
         self._workspace: Workspace = self.scene_creation_result["workspace"]
         self._sofa_camera = self.scene_creation_result["camera"].sofa_object
 
-        seeds = self.seed_sequence.spawn(3)
-        self._gripper.seed(seed=seeds[0])
-        self._tissue.seed(seed=seeds[1])
-        self._workspace.seed(seed=seeds[2])
-
         # scale the rewards to an interval of [-1, 0]
         self._reward_scaling_factor = float(1.0 / np.linalg.norm(self._workspace.get_high() - self._workspace.get_low()))
 
@@ -324,7 +319,7 @@ class TissueManipulationEnv(SofaEnv):
                 "\n",
             )
 
-    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
@@ -332,13 +327,13 @@ class TissueManipulationEnv(SofaEnv):
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
         if self._debug:
             self.debug_render(observation)
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _get_new_target_position(self) -> np.ndarray:
         """Returns a new target position that is not too close to the current target position and within the reachable points.
@@ -392,10 +387,16 @@ class TissueManipulationEnv(SofaEnv):
 
         return np.array((candidate_point[0], tissue_position[1], candidate_point[1]))
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Resets TissueManipulationEnv. Validates visibility of IDP and minimal initial distance."""
-        # Reset from parent class
-        super().reset()
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
+
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(3)
+            self._gripper.seed(seed=seeds[0])
+            self._tissue.seed(seed=seeds[1])
+            self._workspace.seed(seed=seeds[2])
+            self.unconsumed_seed = False
 
         self._gripper.reset()
         self._tissue.reset()
@@ -432,7 +433,7 @@ class TissueManipulationEnv(SofaEnv):
         # The target point will be overlayed onto the observation.
         self._visual_target.set_visibility(False)
 
-        return self._get_observation(self._maybe_update_rgb_buffer())
+        return self._get_observation(self._maybe_update_rgb_buffer()), {}
 
     def overlay_target(self, observation: np.ndarray, radius: int = 7, scaling_factor: float = 1.0) -> np.ndarray:
         """Adds visual target as overlay to observation. cv2.circle(...) is used."""
@@ -662,7 +663,7 @@ class TissueManipulationEnv(SofaEnv):
 
     def annotate_pyglet_window(self) -> None:
         """Visualize distance as pyglet window caption."""
-        if self.render_mode == RenderMode.HUMAN:
+        if self.internal_render_mode == RenderMode.HUMAN:
             distance_to_show = self.reward_info["distance_to_target_position"]
             if distance_to_show is None:
                 distance_to_show = -1.0
@@ -684,7 +685,7 @@ class TissueManipulationEnv(SofaEnv):
         return float(mean_squared)
 
     def get_last_observation(self) -> np.ndarray:
-        if self.render_mode == RenderMode.NONE:
+        if self.internal_render_mode == RenderMode.NONE:
             raise ValueError("Calling env.render() is invalid when render_mode was set to RenderMode.NONE.")
         return self._last_observation
 
@@ -767,7 +768,8 @@ if __name__ == "__main__":
         # while not done:
         while True:
             start = time.time()
-            obs, reward, done, info = env.step(random_action)
+            obs, reward, terminated, truncated, info = env.step(random_action)
+            done = terminated or truncated
 
             if len(gripper.motion_path) == 0 and len(targets) > 0:
                 hit_corner = True

@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import defaultdict, deque
@@ -7,7 +6,7 @@ from enum import Enum, unique
 from pathlib import Path
 from functools import reduce
 
-from typing import Callable, Union, Tuple, Optional, List, Any
+from typing import Callable, Union, Tuple, Optional, List, Any, Dict
 
 from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 
@@ -177,11 +176,11 @@ class PickAndPlaceEnv(SofaEnv):
         action_dimensionality = 5
         self.action_type = action_type
         if action_type == ActionType.CONTINUOUS:
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
             self._maximum_state_velocity = maximum_state_velocity
             self._scale_action = self._scale_continuous_action
         else:
-            self.action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+            self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
             self._scale_action = self._scale_discrete_action
 
             if isinstance(discrete_action_magnitude, np.ndarray):
@@ -218,14 +217,14 @@ class PickAndPlaceEnv(SofaEnv):
             # torus_tracking_point_positions -> num_torus_tracking_points * 3
             # active_peg_positions (XZ) -c num_active_pegs*2
             observations_size = 1 + 5 + 7 + 3 + num_torus_tracking_points * 3 + num_active_pegs * 2
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise ValueError(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -265,9 +264,6 @@ class PickAndPlaceEnv(SofaEnv):
         self.target_positions: np.ndarray = self.scene_creation_result["target_positions"]
         self.contact_listeners = self.scene_creation_result["contact_listeners"]
 
-        seeds = self.seed_sequence.spawn(1)
-        self.gripper.seed(seed=seeds[0])
-
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the gripper.
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.gripper.cartesian_workspace["high"] - self.gripper.cartesian_workspace["low"])
@@ -287,17 +283,17 @@ class PickAndPlaceEnv(SofaEnv):
         else:
             raise ValueError(f"num_torus_tracking_points must be > 0 or == -1 (to use them all). Received {self.num_torus_tracking_points}.")
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_continuous_action(self, action: np.ndarray) -> np.ndarray:
         """
@@ -530,7 +526,7 @@ class PickAndPlaceEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
         """Reset the state of the environment and return the initial observation."""
 
         if self._initialized:
@@ -547,7 +543,13 @@ class PickAndPlaceEnv(SofaEnv):
                 self.torus.set_reset_state(new_states)
 
         # Reset from parent class -> calls the simulation's reset function
-        super().reset()
+        super().reset(seed)
+
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(1)
+            self.gripper.seed(seed=seeds[0])
+            self.unconsumed_seed = False
 
         # Reset the gripper
         self.gripper.reset_gripper()
@@ -608,7 +610,7 @@ class PickAndPlaceEnv(SofaEnv):
         # Set the current phase after reset
         self.active_phase = Phase.PLACE if self.start_grasped else Phase.PICK
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -657,7 +659,8 @@ if __name__ == "__main__":
             action = env.action_space.sample()
             action[:] = 0.0
             action[3] = -1.0
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             end = time.perf_counter()
             fps = 1 / (end - start)
             fps_list.append(fps)

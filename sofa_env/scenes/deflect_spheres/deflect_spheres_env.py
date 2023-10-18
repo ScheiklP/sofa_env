@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import defaultdict, deque
@@ -30,6 +29,8 @@ class ObservationType(Enum):
 class ActionType(Enum):
     DISCRETE = 0
     CONTINUOUS = 1
+    VELOCITY = 2
+    POSITION = 3
 
 
 @unique
@@ -91,6 +92,8 @@ class DeflectSpheresEnv(SofaEnv):
             "delta_deflection_of_active_sphere": 0.0,
             "done_with_active_sphere": 0.0,
             "successful_task": 0.0,
+            "rcm_violation_xyz": -0.0,
+            "rcm_violation_rotation": -0.0,
         },
         maximum_state_velocity: Union[np.ndarray, float] = np.array([20.0, 20.0, 20.0, 20.0]),
         discrete_action_magnitude: Union[np.ndarray, float] = np.array([15.0, 15.0, 15.0, 10.0]),
@@ -157,53 +160,93 @@ class DeflectSpheresEnv(SofaEnv):
                 action_dimensionality = 8
 
         self.action_type = action_type
-        if action_type == ActionType.CONTINUOUS:
-            self._scale_action = self._scale_continuous_action
-            if self.individual_agents:
-                self._do_action = self._do_action_individual
-                self.action_space = gym.spaces.Dict(
-                    {
-                        "left_cauter": gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
-                        "right_cauter": gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
-                    }
-                )
-            else:
-                self._do_action = self._do_action_single if self.single_agent else self._do_action_multi
-                self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
 
-        else:
-            if isinstance(discrete_action_magnitude, np.ndarray):
-                if not len(discrete_action_magnitude) == 8:
-                    raise ValueError(f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length 8 as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}.")
-
+        # Discrete action space is a lookup table with intereger values mapping to a continuous action vector
+        if action_type == ActionType.DISCRETE:
             self._scale_action = self._scale_discrete_action
+            if isinstance(discrete_action_magnitude, np.ndarray):
+                if not len(discrete_action_magnitude) == action_dimensionality:
+                    raise ValueError(f"If you want to use individual discrete action step sizes per action dimension, please pass an array of length {action_dimensionality} as discrete_action_magnitude. Received {discrete_action_magnitude=} with lenght {len(discrete_action_magnitude)}.")
 
-            if self.individual_agents:
-                self._do_action = self._do_action_individual
-                self.action_space = gym.spaces.Dict(
-                    {
-                        "left_cauter": gym.spaces.Discrete(action_dimensionality * 2 + 1),
-                        "right_cauter": gym.spaces.Discrete(action_dimensionality * 2 + 1),
-                    }
-                )
+            # Single agent
+            if self.single_agent:
+                self._do_action = self._do_action_single
+                self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
+            # Multi-agent
             else:
-                self._do_action = self._do_action_single if self.single_agent else self._do_action_multi
-                self.action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+                # Individual agents
+                if self.individual_agents:
+                    self._do_action = self._do_action_individual
+                    self.action_space = spaces.Dict(
+                        {
+                            "left_cauter": spaces.Discrete(action_dimensionality * 2 + 1),
+                            "right_cauter": spaces.Discrete(action_dimensionality * 2 + 1),
+                        }
+                    )
+                # Joint agents
+                else:
+                    self._do_action = self._do_action_multi
+                    self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
 
             # [step, 0, 0, ...], [-step, 0, 0, ...], [0, step, 0, ...], [0, -step, 0, ...]
             action_list = []
             for i in range(action_dimensionality * 2):
-                action = [0.0] * (action_dimensionality * 2)
+                action = [0.0] * (action_dimensionality)
                 step_size = discrete_action_magnitude if isinstance(discrete_action_magnitude, float) else discrete_action_magnitude[int(i / 2)]
                 action[int(i / 2)] = (1 - 2 * (i % 2)) * step_size
                 action_list.append(action)
 
             # Noop action
-            action_list.append([0.0] * (action_dimensionality * 2))
+            action_list.append([0.0] * (action_dimensionality))
 
             self._discrete_action_lookup = np.array(action_list)
             self._discrete_action_lookup *= self.time_step
             self._discrete_action_lookup.flags.writeable = False
+
+        else:
+            # Determine the action space limits and the scaling factor
+            if action_type == ActionType.CONTINUOUS:
+                action_space_limits = {
+                    "low": -np.ones(4, dtype=np.float32),
+                    "high": np.ones(4, dtype=np.float32),
+                }
+                # Scale 1.0 to the maximum velocity
+                self._maximum_state_velocity = maximum_state_velocity
+                self._scale_action = self._scale_continuous_action
+            elif action_type == ActionType.VELOCITY:
+                action_space_limits = {
+                    "low": -maximum_state_velocity,
+                    "high": maximum_state_velocity,
+                }
+                # Do not scale the velocity, as it is already scaled
+                self._maximum_state_velocity = 1.0
+                self._scale_action = self._scale_continuous_action
+            elif action_type == ActionType.POSITION:
+                # Same as the state limits of the instruments
+                action_space_limits = {
+                    "low": np.array([-90.0, -90.0, -90.0, 0.0]),
+                    "high": np.array([90.0, 90.0, 90.0, 300.0]),
+                }
+
+            # Determine the do_action function
+            if self.individual_agents:
+                self._do_action = self._do_action_individual
+                self.action_space = spaces.Dict(
+                    {
+                        "left_cauter": spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(action_dimensionality,), dtype=np.float32),
+                        "right_cauter": spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(action_dimensionality,), dtype=np.float32),
+                    }
+                )
+            else:
+                if self.single_agent:
+                    self._do_action = self._do_action_single
+                else:
+                    self._do_action = self._do_action_multi
+                    action_space_limits["low"] = np.concatenate((action_space_limits["low"], action_space_limits["low"]))
+                    action_space_limits["high"] = np.concatenate((action_space_limits["high"], action_space_limits["high"]))
+                self.action_space = spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(action_dimensionality,), dtype=np.float32)
+
+            self.action_space_limits = action_space_limits
 
         ###################
         # Observation Space
@@ -218,15 +261,15 @@ class DeflectSpheresEnv(SofaEnv):
             # pose -> 7 if single agent, 14 if multi agent
 
             observations_size = self.num_objects * 3 + 3 + (1 - self.single_agent) + 4 * (1 + (not self.single_agent)) + 7 * (1 + (not self.single_agent))
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         # RGB + Depth observations
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise ValueError(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -259,26 +302,21 @@ class DeflectSpheresEnv(SofaEnv):
         self.sample_positions_func: Callable = self.scene_creation_result["sample_positions_func"]
         self.contact_listener: Dict[str, self.sofa_core.ContactListener] = self.scene_creation_result["contact_listener"]
 
-        seeds = self.seed_sequence.spawn(1 if self.single_agent else 2)
-        self.right_cauter.seed(seed=seeds[0])
-        if not self.single_agent:
-            self.left_cauter.seed(seed=seeds[1])
-
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the cauter.
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.right_cauter.cartesian_workspace["high"] - self.right_cauter.cartesian_workspace["low"])
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
-        """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
+        """Step function of the environment that applies the action to the simulation and returns observation, reward, terminated (done) and truncated signals, and info."""
 
         maybe_rgb_observation = super().step(action)
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_continuous_action(self, action: np.ndarray) -> np.ndarray:
         """
@@ -299,17 +337,28 @@ class DeflectSpheresEnv(SofaEnv):
 
     def _do_action_individual(self, action: Dict[str, np.ndarray]) -> None:
         """Apply action to the simulation."""
-        self.left_cauter.set_state(self.left_cauter.get_state() + self._scale_action(action["left_cauter"]))
-        self.right_cauter.set_state(self.right_cauter.get_state() + self._scale_action(action["right_cauter"]))
+        if self.action_type == ActionType.POSITION:
+            self.left_cauter.set_state(action["left_cauter"])
+            self.right_cauter.set_state(action["right_cauter"])
+        else:
+            self.left_cauter.set_state(self.left_cauter.get_state() + self._scale_action(action["left_cauter"]))
+            self.right_cauter.set_state(self.right_cauter.get_state() + self._scale_action(action["right_cauter"]))
 
     def _do_action_multi(self, action: np.ndarray) -> None:
         """Apply action to the simulation."""
-        self.left_cauter.set_state(self.left_cauter.get_state() + self._scale_action(action[:4]))
-        self.right_cauter.set_state(self.right_cauter.get_state() + self._scale_action(action[4:]))
+        if self.action_type == ActionType.POSITION:
+            self.left_cauter.set_state(action[:4])
+            self.right_cauter.set_state(action[4:])
+        else:
+            self.left_cauter.set_state(self.left_cauter.get_state() + self._scale_action(action[:4]))
+            self.right_cauter.set_state(self.right_cauter.get_state() + self._scale_action(action[4:]))
 
     def _do_action_single(self, action: np.ndarray) -> None:
         """Apply action to the simulation."""
-        self.right_cauter.set_state(self.right_cauter.get_state() + self._scale_action(action))
+        if self.action_type == ActionType.POSITION:
+            self.right_cauter.set_state(action)
+        else:
+            self.right_cauter.set_state(self.right_cauter.get_state() + self._scale_action(action))
 
     def _get_reward_features(self, previous_reward_features: dict) -> dict:
         """Get the features that may be used to assemble the reward function
@@ -317,6 +366,8 @@ class DeflectSpheresEnv(SofaEnv):
         Features:
             - action_violated_cartesian_workspace (int): Number of tools that violate their Cartesian workspace
             - action_violated_state_limits (int): Number of tools that violate their state limits
+            - rcm_violation_xyz (float): Deviation from planned to actual positions of the instruments.
+            - rcm_violation_rotation (float): Deviation from planned to actual orientations of the instruments.
             - tool_collision (bool): Whether the tools collide
             - distance_to_active_sphere (float): Distance from the cauter tip to the active sphere
             - delta_distance_to_active_sphere (float): Change in distance from the cauter tip to the active sphere
@@ -337,6 +388,14 @@ class DeflectSpheresEnv(SofaEnv):
         # Did the action violate state or workspace limits?
         reward_features["action_violated_cartesian_workspace"] = int(self.right_cauter.last_set_state_violated_workspace_limits)
         reward_features["action_violated_state_limits"] = int(self.right_cauter.last_set_state_violated_state_limits)
+
+        right_rcm_difference = self.right_cauter.get_pose_difference(position_norm=True)
+        if not self.single_agent:
+            left_rcm_difference = self.left_cauter.get_pose_difference(position_norm=True)
+        else:
+            left_rcm_difference = np.zeros_like(right_rcm_difference)
+        reward_features["rcm_violation_xyz"] = (left_rcm_difference[0] + right_rcm_difference[0]) * self._distance_normalization_factor
+        reward_features["rcm_violation_rotation"] = left_rcm_difference[1] + right_rcm_difference[1]
 
         if not self.single_agent:
             left_cauter_position = self.left_cauter.get_cutting_center_position()
@@ -467,7 +526,7 @@ class DeflectSpheresEnv(SofaEnv):
                 state_dict["left_cauter_ptsd"] = self.left_cauter.get_state()
                 state_dict["left_cauter_pose"] = self.left_cauter.get_pose()
 
-            observation = np.concatenate(tuple(state_dict.values()))
+            observation = np.concatenate(tuple(state_dict.values()), dtype=self.observation_space.dtype)
 
         return observation
 
@@ -486,13 +545,21 @@ class DeflectSpheresEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
         """Reset the state of the environment and return the initial observation."""
         # Reset from parent class -> calls the simulation's reset function
-        super().reset()
+        super().reset(seed)
+
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(1 if self.single_agent else 2)
+            self.right_cauter.seed(seed=seeds[0])
+            if not self.single_agent:
+                self.left_cauter.seed(seed=seeds[1])
+            self.unconsumed_seed = False
 
         # Change the height and position of the spheres
-        positions = self.sample_positions_func()
+        positions = self.sample_positions_func(self.rng)
         for index, position in enumerate(positions):
             self.posts[index].set_position(position[:2], height=position[2])
 
@@ -504,9 +571,10 @@ class DeflectSpheresEnv(SofaEnv):
 
         for post in self.posts:
             post.set_state(State.IDLE)
+
+        self.right_cauter.reset_cauter()
         if self.single_agent:
             self.posts[self.active_post_index].set_state(State.ACTIVE_RIGHT)
-            self.right_cauter.reset_cauter()
         else:
             # randomly choose which agent is active
             self.left_cauter.reset_cauter()
@@ -554,7 +622,7 @@ class DeflectSpheresEnv(SofaEnv):
             self.sofa_simulation.animate(self._sofa_root_node, self.time_step)
             self._maybe_update_rgb_buffer()
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -566,14 +634,17 @@ if __name__ == "__main__":
     env = DeflectSpheresEnv(
         observation_type=ObservationType.STATE,
         render_mode=RenderMode.HUMAN,
-        action_type=ActionType.CONTINUOUS,
+        action_type=ActionType.VELOCITY,
         image_shape=(124, 124),
         frame_skip=1,
         time_step=0.1,
         settle_steps=10,
+        single_agent=False,
+        individual_agents=True,
+        # discrete_action_magnitude=np.array([15.0, 15.0, 15.0, 10.0, 15.0, 15.0, 15.0, 10.0]),
     )
 
-    env.reset()
+    env.reset(seed=42)
     done = False
 
     fps_list = deque(maxlen=100)
@@ -582,14 +653,14 @@ if __name__ == "__main__":
         for _ in range(100):
             start = time.perf_counter()
             action = env.action_space.sample()
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             if counter % 300 == 0:
-                env.reset()
+                env.reset(seed=42)
                 counter = 0
             counter += 1
             end = time.perf_counter()
             fps = 1 / (end - start)
             fps_list.append(fps)
-            print(f"FPS Mean: {np.mean(fps_list):.5f}    STD: {np.std(fps_list):.5f}")
+            # print(f"FPS Mean: {np.mean(fps_list):.5f}    STD: {np.std(fps_list):.5f}")
 
-        env.reset()
+        env.reset(seed=42)

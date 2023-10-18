@@ -1,5 +1,5 @@
-import gym
-import gym.spaces
+import gymnasium as gym
+
 from time import perf_counter, sleep
 
 
@@ -16,7 +16,6 @@ class RealtimeWrapper(gym.Wrapper):
         return return_values
 
     def reset(self, **kwargs):
-
         return_values = self.env.reset(**kwargs)
 
         self._delta_t = self.env.time_step * self.env.frame_skip

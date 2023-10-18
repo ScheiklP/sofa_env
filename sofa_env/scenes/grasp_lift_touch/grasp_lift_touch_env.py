@@ -1,5 +1,5 @@
 from collections import defaultdict
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from enum import Enum, unique
@@ -263,12 +263,12 @@ class GraspLiftTouchEnv(SofaEnv):
             # phase -> 1
             # tracking points on the gallbladder surface
             observations_size = 7 + 7 + 5 + 5 + 3 + 1 + 1 + 3 * self.num_gallbladder_tracking_points
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
         elif self.observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         elif self.observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise ValueError(f"Unknown observation type {self.observation_type}.")
@@ -282,18 +282,18 @@ class GraspLiftTouchEnv(SofaEnv):
         if individual_agents:
             self._do_action = self._do_action_dict
             if action_type == ActionType.CONTINUOUS:
-                self.action_space = gym.spaces.Dict(
+                self.action_space = spaces.Dict(
                     {
-                        "gripper": gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
-                        "cauter": gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
+                        "gripper": spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
+                        "cauter": spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
                     }
                 )
                 self._scale_action = self._scale_continuous_action
             else:
-                self.action_space = gym.spaces.Dict(
+                self.action_space = spaces.Dict(
                     {
-                        "gripper": gym.spaces.Discrete(action_dimensionality * 2 + 1),
-                        "cauter": gym.spaces.Discrete(action_dimensionality * 2 + 1),
+                        "gripper": spaces.Discrete(action_dimensionality * 2 + 1),
+                        "cauter": spaces.Discrete(action_dimensionality * 2 + 1),
                     }
                 )
 
@@ -319,7 +319,7 @@ class GraspLiftTouchEnv(SofaEnv):
         else:
             self._do_action = self._do_action_array
             if action_type == ActionType.CONTINUOUS:
-                self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
+                self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
                 self._scale_action = self._scale_continuous_action
             else:
                 raise NotImplementedError("GraspLiftTouchEnv currently only supports continuous actions for non-individual agents.")
@@ -363,33 +363,16 @@ class GraspLiftTouchEnv(SofaEnv):
         self.target_position = np.empty(3, dtype=np.float32)
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.gripper.cartesian_workspace["high"] - self.gripper.cartesian_workspace["low"])
 
-        seeds = self.seed_sequence.spawn(3)
-        self.gripper.seed(seed=seeds[0])
-        self.cauter.seed(seed=seeds[1])
-        self.poi.seed(seed=seeds[2])
-
-        # Select indices on the gallbladder surface as tracking points for state observations
-        self.gallbladder_surface_mechanical_object = self.gallbladder.collision_model_node.MechanicalObject
-        gallbladder_surface_points = self.gallbladder_surface_mechanical_object.position.array()
-        first_gallbladder_tracking_point_index = self.rng.integers(low=0, high=len(gallbladder_surface_points), endpoint=False)
-        tracking_point_indices = farthest_point_sampling(
-            gallbladder_surface_points,
-            self.num_gallbladder_tracking_points,
-            starting_point_index=first_gallbladder_tracking_point_index,
-            return_indices=True,
-        )
-        self.gallbladder_tracking_indices = tracking_point_indices
-
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         image_observation = super().step(action)
         observation = self._get_observation(image_observation)
         reward = self._get_reward(image=image_observation)
-        done = self.active_phase == self.ending_phase
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _get_info(self) -> dict:
         """Assemble the info dictionary."""
@@ -405,6 +388,10 @@ class GraspLiftTouchEnv(SofaEnv):
             self.episode_info[shortened_key] += value
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features, **self.agent_specific_rewards}
+
+    def _get_done(self) -> bool:
+        """Look up if the episode is finished."""
+        return self.reward_info["successful_task"] or self.reward_info["failed_task"]
 
     def _get_observation(self, image_observation: Union[np.ndarray, None]) -> Union[np.ndarray, dict]:
         if self.observation_type == ObservationType.RGB:
@@ -426,8 +413,28 @@ class GraspLiftTouchEnv(SofaEnv):
             state_dict["gallbladder_tracking_points"] = self.gallbladder_surface_mechanical_object.position.array()[self.gallbladder_tracking_indices].ravel()
             return np.concatenate(tuple(state_dict.values()))
 
-    def reset(self) -> Union[np.ndarray, None]:
-        super().reset()
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
+
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(3)
+            self.gripper.seed(seed=seeds[0])
+            self.cauter.seed(seed=seeds[1])
+            self.poi.seed(seed=seeds[2])
+
+            # Select indices on the gallbladder surface as tracking points for state observations
+            self.gallbladder_surface_mechanical_object = self.gallbladder.collision_model_node.MechanicalObject
+            gallbladder_surface_points = self.gallbladder_surface_mechanical_object.position.array()
+            first_gallbladder_tracking_point_index = self.rng.integers(low=0, high=len(gallbladder_surface_points), endpoint=False)
+            tracking_point_indices = farthest_point_sampling(
+                gallbladder_surface_points,
+                self.num_gallbladder_tracking_points,
+                starting_point_index=first_gallbladder_tracking_point_index,
+                return_indices=True,
+            )
+            self.gallbladder_tracking_indices = tracking_point_indices
+            self.unconsumed_seed = False
 
         # Reset the phase to the one set on environment creation
         self.active_phase = self.starting_phase
@@ -460,7 +467,7 @@ class GraspLiftTouchEnv(SofaEnv):
                 for action in action_plan:
                     self.gripper.do_action(action)
                     self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
-                    if self.render_mode == RenderMode.HUMAN:
+                    if self.internal_render_mode == RenderMode.HUMAN:
                         self._maybe_update_rgb_buffer()
 
                 # Close the gripper jaws
@@ -469,13 +476,13 @@ class GraspLiftTouchEnv(SofaEnv):
                 for action in action_plan:
                     self.gripper.do_action(action)
                     self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
-                    if self.render_mode == RenderMode.HUMAN:
+                    if self.internal_render_mode == RenderMode.HUMAN:
                         self._maybe_update_rgb_buffer()
 
                 # Animate several timesteps without actions to let the gripper establish a new grasp.
                 for _ in range(10):
                     self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
-                    if self.render_mode == RenderMode.HUMAN:
+                    if self.internal_render_mode == RenderMode.HUMAN:
                         self._maybe_update_rgb_buffer()
 
                 # Raise an error, if that is not successful for more than 10 attempts.
@@ -496,7 +503,7 @@ class GraspLiftTouchEnv(SofaEnv):
 
                 # If we do not render the scene, figuring out if the target is visible, is not possible.
                 # In this case, we just pull outh the gripper very far, to make sure the target is exposed.
-                if self.render_mode == RenderMode.NONE:
+                if self.internal_render_mode == RenderMode.NONE:
                     optimal_state = np.array([3.0, 10.0, 95.0, 50.0, 5.0])
                 else:
                     optimal_state = np.array([3.0, 10.0, 95.0, 150.0, 5.0])
@@ -505,10 +512,10 @@ class GraspLiftTouchEnv(SofaEnv):
                     for action in action_plan:
                         self.gripper.do_action(action)
                         self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
-                        if self.render_mode == RenderMode.HUMAN:
+                        if self.internal_render_mode == RenderMode.HUMAN:
                             self._maybe_update_rgb_buffer()
 
-                    if self.render_mode == RenderMode.NONE:
+                    if self.internal_render_mode == RenderMode.NONE:
                         target_visible = True
                     else:
                         # Animate several timesteps without actions to let simulation settle.
@@ -560,7 +567,7 @@ class GraspLiftTouchEnv(SofaEnv):
         for key in self.agent_specific_rewards:
             self.agent_specific_rewards[key] = 0.0
 
-        return self._get_observation(self._maybe_update_rgb_buffer())
+        return self._get_observation(self._maybe_update_rgb_buffer()), {}
 
     def _get_reward(self, image: np.ndarray) -> float:
         """Retrieve the reward features and scale them with the ``reward_amount_dict``."""
@@ -636,7 +643,8 @@ class GraspLiftTouchEnv(SofaEnv):
                     self.agent_specific_rewards["gripper_reward"] += self.reward_info[f"reward_{key}"]
 
         self.reward_info["reward"] = reward
-        self.reward_info["successful_task"] = float(reward_features["successful_task"])
+        self.reward_info["successful_task"] = reward_features["successful_task"]
+        self.reward_info["failed_task"] = reward_features["failed_task"]
 
         return float(reward)
 
@@ -743,7 +751,7 @@ if __name__ == "__main__":
         start = time.time()
         for _ in range(200):
             action = env.action_space.sample()
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
 
         env.reset()
         end = time.time()

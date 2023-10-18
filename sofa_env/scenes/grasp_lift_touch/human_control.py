@@ -1,5 +1,6 @@
 from sofa_env.utils.human_input import XboxController
-from sofa_env.utils.wrappers import TrajectoryRecorder, RealtimeWrapper
+from sofa_env.wrappers.realtime import RealtimeWrapper
+from sofa_env.wrappers.trajectory_recorder import TrajectoryRecorder
 from sofa_env.scenes.grasp_lift_touch.grasp_lift_touch_env import GraspLiftTouchEnv, ObservationType, ActionType, RenderMode, Phase
 import cv2
 from typing import Tuple
@@ -81,7 +82,7 @@ if __name__ == "__main__":
             after_reset_callbacks=[store_rgb_obs],
         )
 
-    reset_obs = env.reset()
+    reset_obs, reset_info = env.reset()
     if video_writer is not None:
         video_writer.write(env.render()[:, :, ::-1])
 
@@ -111,7 +112,8 @@ if __name__ == "__main__":
         else:
             up = True
 
-        obs, reward, done, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
         if video_writer is not None:
             video_writer.write(env.render()[:, :, ::-1])
 

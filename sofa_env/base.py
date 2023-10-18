@@ -1,14 +1,13 @@
 import abc
 import importlib
-import gym
-import gym.spaces
+import gymnasium as gym
 import os
 
 import numpy as np
 
 from enum import Enum, unique
 from pathlib import Path
-from typing import Optional, Union, Any, List
+from typing import Dict, Optional, Union, Any, Tuple
 
 
 @unique
@@ -19,6 +18,7 @@ class RenderMode(Enum):
 
     - state based without rendering anything (NONE),
     - generate image observations headlessly without creating a window (HEADLESS),
+    - generate image observations headlessly, but only when ``env.update_rgb_buffer()`` or ``env.update_rgb_buffer_remote()`` are called manually (MANUAL).
     - create a window to observe the simulation for a remote workstation or WSL (REMOTE).
     - or create a window to observe the simulation (HUMAN).
     """
@@ -27,6 +27,7 @@ class RenderMode(Enum):
     HEADLESS = 1
     REMOTE = 2
     NONE = 3
+    MANUAL = 4
 
 
 @unique
@@ -47,7 +48,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
     In either case, there are a few requirements on SofaEnv classes:
 
     - no SOFA code should be called in ``__init__()``. Instead, all initialization should be done on the first call to ``reset()``. This class does this by checking the status of a boolean on each call to ``reset()``.
-    - the class must possess members called observation_space and action_space, which are subclasses of ``gym.spaces.Space``.
+    - the class must possess members called observation_space and action_space, which are subclasses of ``gymnasium.spaces.Space``.
     - getting rendered images from SOFA assumes, that you created a camera in your scene description. Your createScene function should thus return a dictionary, that has a key value pair of ``'camera': Union[Sofa.Core.Object, sofa_env.sofa_templates.camera.Camera]``.
     - the scene_description script has to contain a ``createScene`` function that takes at least a ``Sofa.Core.Node`` as its root node. It can optionally accept keyword arguments that you pass through ``create_scene_kwargs``.
     - you are responsible for implementing the functions ``step``, ``reset``, and ``_do_action``.
@@ -84,25 +85,29 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         # HEADLESS -> no pyglet window created
         # REMOTE -> create and show a pyglet window for remote workstation or WSL
         # NONE -> no visuals
-        self.render_mode = render_mode
+        # MANUAL -> same as headless, but only render when update_rgb_buffer is called manually
+        self.internal_render_mode = render_mode
         self.render_framework = render_framework
         self._initialized = False
         self._modules_imported = False
         self._scene_path = Path(scene_path)
         self._window = None
 
-        if not self.render_mode == RenderMode.NONE:
+        if not self.internal_render_mode == RenderMode.NONE:
+            self.render_mode = "rgb_array"
             self.metadata = {
-                "render.modes": ["rgb_array"],
-                "video.output_frames_per_second": 1 / time_step / frame_skip,
+                "render_fps": 1 / (time_step * frame_skip),
             }
 
             # Set tha function that returns the rgb buffer
             self._maybe_update_rgb_buffer = self._update_rgb_buffer
 
             # Figure out what function returns the rgb data
-            if self.render_mode == RenderMode.REMOTE:
+            if self.internal_render_mode == RenderMode.REMOTE:
                 self._get_rgb = self.get_rgb_from_open_gl
+
+            elif self.internal_render_mode == RenderMode.MANUAL:
+                self._maybe_update_rgb_buffer = lambda *args, **kwargs: None
             else:
                 if self.render_framework == RenderFramework.PYGLET:
                     self._get_rgb = self.get_rgb_from_pyglet
@@ -110,10 +115,13 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
                     self._get_rgb = self.get_rgb_from_pygame
 
             # Figure out which window flip function to call
+            # and where to get depth data from
             if self.render_framework == RenderFramework.PYGLET:
                 self._flip_window = self._flip_pyglet_window
+                self.get_depth = self.get_depth_from_pyglet
             elif self.render_framework == RenderFramework.PYGAME:
                 self._flip_window = self._flip_pygame_window
+                self.get_depth = self.get_depth_from_pygame
 
         else:
             self._maybe_update_rgb_buffer = lambda *args, **kwargs: None
@@ -121,8 +129,12 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         self.create_scene_kwargs = create_scene_kwargs if create_scene_kwargs is not None else {}
         self.time_step = time_step
         self.frame_skip = frame_skip
-        self.seed_sequence: Union[np.random.SeedSequence, None] = None
-        self.rng: Union[np.random.Generator, None] = None
+        self.seed_sequence: Optional[np.random.SeedSequence] = None
+        # Flag that indicates whether there is a new seed that has not been consumed yet.
+        # This seed is consumed in the reset function.
+        self.unconsumed_seed = False
+
+        self.rng: Optional[np.random.Generator] = None
 
     def step(self, action: Any) -> Union[np.ndarray, None]:
         """Runs ``#frame_skip`` timesteps of the environment's dynamics. The action will be applied each time.
@@ -159,9 +171,13 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         return self._maybe_update_rgb_buffer()
 
-    def reset(self) -> Union[np.ndarray, None]:
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
         """Resets the SOFA simulation.
         If this is the first ``env.reset()``, the simulation is initialized.
+
+        Args:
+            seed (Union[int, np.random.SeedSequence, None]): the seed to use for the environment.
+            options (Optional[Dict[str, Any]]): a dictionary of options.
 
         Returns:
             rgb_buffer (Union[np.ndarray, None]): the current visual observation from the env, if the render mode is not ``RenderMode.NONE``
@@ -171,48 +187,41 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
             1. call ``super().reset()``,
             2. manually reset any (SOFA) components that need resetting (e.g. by setting a new pose), and
             3. return the initial observation.
+
+            Most environments have SOFA objects that each have their own random number generator.
+            To correctly seed the environment, you need to set the seed of each SOFA object.
+            However, we can only do that, if the environment is already initialized, so ``reset()`` was called at least once.
+            See ``reset()`` in ``DeflectSpheresEnv`` for an example.
         """
+
+        if self.seed_sequence is None or seed is not None:
+            if isinstance(seed, np.random.SeedSequence):
+                self.seed_sequence = seed
+            else:
+                self.seed_sequence = np.random.SeedSequence(seed)
+            self.rng = np.random.default_rng(self.seed_sequence)
+            self.unconsumed_seed = True
 
         if not self._initialized:
             self._init_sim()
-            # Set flag so that initialization only happens once
-            self._initialized = True
 
         self.sofa_simulation.reset(self._sofa_root_node)
 
-        return self._maybe_update_rgb_buffer()
+        return self._maybe_update_rgb_buffer(), {}
 
     def render(self, mode: Optional[str] = None) -> np.ndarray:
         """Returns the rgb observation from the simulation."""
-        if self.render_mode == RenderMode.NONE:
+        if self.internal_render_mode == RenderMode.NONE:
             raise RuntimeError("Calling env.render() is invalid when render_mode was set to RenderMode.NONE.")
         return self._rgb_buffer
 
     def close(self) -> None:
         """Performs necessary cleanup when environment is no longer needed."""
-        if self._window is not None:
-            if self.render_framework == RenderFramework.PYGLET:
-                self._window.close()
-            elif self.render_framework == RenderFramework.PYGAME:
-                self.pygame.quit()
-            else:
-                raise RuntimeError(f"Cannot close window for unsupported render framework {self.render_framework}.")
-
-    def seed(self, seed: Union[int, np.random.SeedSequence]) -> List[int]:
-        """Sets random seed for numpy by creating a SeedSequence."""
-        if isinstance(seed, np.random.SeedSequence):
-            self.seed_sequence = seed
-        else:
-            self.seed_sequence = np.random.SeedSequence(seed)
-        self.rng = np.random.default_rng(self.seed_sequence)
-        return [seed]
+        if hasattr(self, "_window") and self._window is not None:
+            self._window.close()
 
     def _init_sim(self) -> None:
         """Initializes simulation by creating the scene graph."""
-
-        if self.seed_sequence is None:
-            self.seed_sequence = np.random.SeedSequence()
-            self.rng = np.random.default_rng(self.seed_sequence)
 
         if not self._modules_imported:
             # The SOFA and pyglet modules have a state that depends on when and where they were imported.
@@ -223,7 +232,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
             self.sofa_simulation = importlib.import_module("Sofa.Simulation")
             self.camera_templates = importlib.import_module("sofa_env.sofa_templates.camera")
 
-            if not self.render_mode == RenderMode.NONE:
+            if not self.internal_render_mode == RenderMode.NONE:
                 if self.render_framework == RenderFramework.PYGLET:
                     self.pyglet = importlib.import_module("pyglet")
                     self.pyglet.options["vsync"] = False
@@ -232,7 +241,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
                 elif self.render_framework == RenderFramework.PYGAME:
                     self.pygame = importlib.import_module("pygame")
 
-                if self.render_mode == RenderMode.HEADLESS:
+                if self.internal_render_mode == RenderMode.HEADLESS or self.internal_render_mode == RenderMode.MANUAL:
                     if self.render_framework == RenderFramework.PYGLET:
                         # Setting this object will determine which classes are used by pyglet as Display, Screen, and Window.
                         # If headless is True, it will use EGL and HeadlessDisplay, HeadlessScreen, ...
@@ -276,7 +285,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         self.sofa_simulation.init(self._sofa_root_node)
 
         # If we want to render any images, we have to make sure there is a camera
-        if not self.render_mode == RenderMode.NONE:
+        if not self.internal_render_mode == RenderMode.NONE:
             if not isinstance(self.scene_creation_result, dict) and "camera" in self.scene_creation_result and isinstance(self.scene_creation_result["camera"], (self.sofa_core.Object, self.camera_templates.Camera)):
                 raise KeyError("When creating a scene that should be rendered, please make sure createScene() returns a dictionary with a key value pair of 'camera': Union[Sofa.Core.Object, sofa_env.sofa_templates.camera.Camera].")
 
@@ -293,6 +302,9 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
                 self._init_pygame_window()
                 self._rgb_buffer = np.zeros_like(self.get_rgb_from_pygame(), dtype=np.uint8)
 
+        # Set flag so that initialization only happens once
+        self._initialized = True
+
     def _flip_pyglet_window(self):
         """Flips the pyglet window."""
         self._window.flip()
@@ -304,13 +316,9 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
     def _update_rgb_buffer(self) -> np.ndarray:
         """Updates the visuals in sofa, writes the rgb array to the envs rgb_buffer, flips the window, and returns the rgb array."""
         self._update_sofa_visuals()
-
         rgb_array = self._get_rgb()
-
         self._rgb_buffer[:] = rgb_array
-
         self._flip_window()
-
         return rgb_array
 
     def _init_pyglet_window(self):
@@ -349,27 +357,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
             context=context,
         )
 
-        self.opengl_gl.glClear(self.opengl_gl.GL_COLOR_BUFFER_BIT | self.opengl_gl.GL_DEPTH_BUFFER_BIT)
-        self.opengl_gl.glEnable(self.opengl_gl.GL_LIGHTING)
-        self.opengl_gl.glEnable(self.opengl_gl.GL_DEPTH_TEST)
-        self.opengl_gl.glDepthFunc(self.opengl_gl.GL_LESS)
-
-        self.sofa_gl.glewInit()
-        self.sofa_simulation.initVisual(self._sofa_root_node)
-        self.sofa_simulation.initTextures(self._sofa_root_node)
-
-        self.opengl_gl.glMatrixMode(self.opengl_gl.GL_PROJECTION)
-        self.opengl_gl.glLoadIdentity()
-
-        # Vertical field of view, aspect ratio, zNear, zFar
-        self.opengl_glu.gluPerspective(
-            self._camera_object.fieldOfView.value,
-            (self._camera_object.widthViewport.value / self._camera_object.heightViewport.value),
-            self._camera_object.zNear.value,
-            self._camera_object.zFar.value,
-        )
-        self.opengl_gl.glMatrixMode(self.opengl_gl.GL_MODELVIEW)
-        self.opengl_gl.glLoadIdentity()
+        self._init_opengl()
 
     def _init_pygame_window(self):
         """Creates a pygame window."""
@@ -377,6 +365,10 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         self.pygame.init()
         self._window = self.pygame.display.set_mode((self._camera_object.heightViewport.value, self._camera_object.widthViewport.value), self.pygame.DOUBLEBUF | self.pygame.OPENGL)
 
+        self._init_opengl()
+
+    def _init_opengl(self):
+        """Initializes the opengl context."""
         self.opengl_gl.glClear(self.opengl_gl.GL_COLOR_BUFFER_BIT | self.opengl_gl.GL_DEPTH_BUFFER_BIT)
         self.opengl_gl.glEnable(self.opengl_gl.GL_LIGHTING)
         self.opengl_gl.glEnable(self.opengl_gl.GL_DEPTH_TEST)
@@ -444,14 +436,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
         return np.copy(np.flipud(depth_array))
 
-    def get_depth(self):
-        """get depth based on render frameworks (pyglet and pygame)"""
-
-        if self.render_framework == RenderFramework.PYGLET:
-            return self.get_depth_from_pyglet()
-        elif self.render_framework == RenderFramework.PYGAME:
-            return self.get_depth_from_pygame()
-
     def get_rgb_from_pyglet(self) -> np.ndarray:
         """Reads the rgb buffer from pyglet and returns a copy.
 
@@ -503,12 +487,12 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         z_near = self._camera_object.zNear.value
         z_far = self._camera_object.zFar.value
         height = self._camera_object.heightViewport.value
-        width = self._camera_object.heightViewport.value
+        width = self._camera_object.widthViewport.value
         # Pyglet's get_image_data() always reads the buffer as unsigned byte.
         # We want to read the depth buffer as float, so we call glReadPixels directly
         depth_buffer = self.opengl_gl.glReadPixels(0, 0, width, height, self.opengl_gl.GL_DEPTH_COMPONENT, self.opengl_gl.GL_FLOAT)
         depth_array = np.frombuffer(depth_buffer, dtype=np.float32)
-        depth_array = depth_array.reshape(height, width)
+        depth_array = depth_array.reshape(height, width, 1)
         depth_array = np.flipud(depth_array)
         # Linearize the depth array values [0, 1] to their actual physical values -> how far are the objects away from the camera
         # multiplied "regular" equation with -1 to get larger values for objects that are farther away from the camera

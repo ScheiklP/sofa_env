@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium as gym
 import numpy as np
 from typing import List, Optional, Type, Callable
 import open3d as o3d
@@ -41,7 +40,7 @@ class PointCloudFromDepthImageObservationWrapper(gym.ObservationWrapper):
         """Reads the data for the point clouds from the sofa_env after it is resetted."""
 
         # First reset calls _init_sim to setup the scene
-        observation = self.env.reset(**kwargs)
+        observation, reset_info = self.env.reset(**kwargs)
 
         if not isinstance(self.env.scene_creation_result, dict) and "camera" in self.env.scene_creation_result and isinstance(self.env.scene_creation_result["camera"], (self.env.sofa_core.Object, self.env.camera_templates.Camera)):
             raise AttributeError("No camera was found to create a raycasting scene. Please make sure createScene() returns a dictionary with key 'camera' or specify the cameras for point cloud creation in camera_configs.")
@@ -55,7 +54,7 @@ class PointCloudFromDepthImageObservationWrapper(gym.ObservationWrapper):
         self.width = int(self.camera_object.widthViewport.array())
         self.height = int(self.camera_object.heightViewport.array())
 
-        return self.observation(observation)
+        return self.observation(observation), reset_info
 
     def create_point_cloud(self) -> np.ndarray:
         """Returns a point cloud calculated from the depth image of the sofa scene"""
@@ -155,7 +154,7 @@ class PointCloudObservationWrapper(gym.ObservationWrapper):
         """Reads the data for the point clouds from the sofa_env after it is resetted."""
 
         # First reset calls _init_sim to setup the scene
-        observation = self.env.reset(**kwargs)
+        observation, reset_info = self.env.reset(**kwargs)
 
         self.position_containers = self.env.scene_creation_result["pointcloud_objects"]["position_containers"]
         self.triangle_containers = self.env.scene_creation_result["pointcloud_objects"]["triangle_containers"]
@@ -183,7 +182,7 @@ class PointCloudObservationWrapper(gym.ObservationWrapper):
                     if key not in camera:
                         raise KeyError(f"Could not find key {key} in configuration for camera {camera}.")
 
-        return self.observation(observation)
+        return self.observation(observation), reset_info
 
     def create_open3d_scene_from_containers(self) -> Type[o3d.t.geometry.PointCloud]:
         """Returns a Open3D raycasting scene from the given positions and triangles containers.

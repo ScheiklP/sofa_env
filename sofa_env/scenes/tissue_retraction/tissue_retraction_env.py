@@ -1,13 +1,13 @@
 import cv2
-import gym
-import gym.spaces
+import gymnasium as gym
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import deque, defaultdict
 from enum import Enum, unique
 from pathlib import Path
 
-from typing import Callable, Union, Tuple, Optional, List, Any
+from typing import Callable, Union, Tuple, Optional, List, Any, Dict
 
 from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.tissue_retraction.sofa_objects.end_effector import EndEffector, is_in, add_waypoints_to_end_effector
@@ -64,7 +64,7 @@ class TissueRetractionEnv(SofaEnv):
         maximum_robot_velocity (float): Maximum per direction robot velocity in meters per second. Used for scaling the actions that are passed to ``env.step(action)``.
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
         render_framework (RenderFramework): choose between pyglet and pygame for rendering
-        action_space (Optional[gym.spaces.Box]): An optional Box action space to set the limits for clipping.
+        action_space (Optional[gymnasium.spaces.Box]): An optional Box action space to set the limits for clipping.
         grasping_position (Union[Tuple[float, float, float], np.ndarray]): World coordinates of the point that should be reached during grasping.
         end_position (Union[Tuple[float, float, float], np.ndarray]): World coordinates of the point that should be reached during retracting.
         grasping_threshold (float): Distance to the ``grasping_position`` at which grasping is triggered.
@@ -137,10 +137,10 @@ class TissueRetractionEnv(SofaEnv):
         if action_type == ActionType.CONTINUOUS:
             self._maximum_robot_velocity = maximum_robot_velocity
             if action_space is None:
-                action_space = gym.spaces.Box(low=-maximum_robot_velocity, high=maximum_robot_velocity, shape=(action_dimensionality,), dtype=np.float32)
+                action_space = spaces.Box(low=-maximum_robot_velocity, high=maximum_robot_velocity, shape=(action_dimensionality,), dtype=np.float32)
             else:
-                if not (isinstance(action_space, gym.spaces.Box) and isinstance(action_space.low, np.ndarray) and isinstance(action_space.high, np.ndarray)):
-                    raise ValueError("If setting a manual continuous action space, please pass it as a gym.spaces.Box. with correct shape.")
+                if not (isinstance(action_space, spaces.Box) and isinstance(action_space.low, np.ndarray) and isinstance(action_space.high, np.ndarray)):
+                    raise ValueError("If setting a manual continuous action space, please pass it as a gymnasium.spaces.Box. with correct shape.")
 
             # Check if the action space is in [-1, 1] to determine if we have to scale the actions in the env
             self._action_space_is_normalized = all(action_space.low == -1.0) and all(action_space.high == 1.0)
@@ -155,10 +155,10 @@ class TissueRetractionEnv(SofaEnv):
                 self._scale_action = self._scale_unnormalized_action
         else:
             if action_space is None:
-                action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+                action_space = spaces.Discrete(action_dimensionality * 2 + 1)
             else:
-                if not (isinstance(action_space, gym.spaces.Discrete) and action_space.n == action_dimensionality * 2 + 1):
-                    raise ValueError(f"If setting a manual discrete action space, please pass it as a gym.spaces.Discrete with {action_dimensionality * 2 + 1} elements.")
+                if not (isinstance(action_space, spaces.Discrete) and action_space.n == action_dimensionality * 2 + 1):
+                    raise ValueError(f"If setting a manual discrete action space, please pass it as a gymnasium.spaces.Discrete with {action_dimensionality * 2 + 1} elements.")
 
             self._scale_action = self._scale_discrete_action
 
@@ -195,30 +195,30 @@ class TissueRetractionEnv(SofaEnv):
             dim_states = 3
             if observe_phase_state:
                 dim_states += 1
-            self.observation_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(dim_states,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(dim_states,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
             if observe_phase_state:
-                self.observation_space = gym.spaces.Dict(
+                self.observation_space = spaces.Dict(
                     {
-                        "rgb": gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8),
-                        "phase": gym.spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+                        "rgb": spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8),
+                        "phase": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
                     }
                 )
             else:
-                self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+                self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         elif observation_type == ObservationType.RGBD:
             if observe_phase_state:
-                self.observation_space = gym.spaces.Dict(
+                self.observation_space = spaces.Dict(
                     {
-                        "rgbd": gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8),
-                        "phase": gym.spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+                        "rgbd": spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8),
+                        "phase": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
                     }
                 )
             else:
-                self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+                self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -306,17 +306,17 @@ class TissueRetractionEnv(SofaEnv):
 
         self._time_step_cost_in_grasping_phase = -self._reward_scaling_factor * grapsing_to_end_distance * self.reward_amount_dict["time_step_cost_scale_in_grasp_phase"]
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
         reward = self._get_reward(maybe_rgb_observation)
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_discrete_action(self, action: int) -> np.ndarray:
         """Maps action indices to a motion delta."""
@@ -535,7 +535,7 @@ class TissueRetractionEnv(SofaEnv):
                 reward += self.reward_amount_dict["one_time_reward_goal"]
 
         # Annotate the pyglet window
-        if self.render_mode == RenderMode.HUMAN:
+        if self.internal_render_mode == RenderMode.HUMAN:
             distance_to_show = self.reward_info["distance_to_end_position"] if self._phase == Phase.RETRACTING else self.reward_info["distance_to_grasping_position"]
             if distance_to_show is None:
                 distance_to_show = -1.0
@@ -547,7 +547,7 @@ class TissueRetractionEnv(SofaEnv):
         self.reward_info["reward"] = reward
         return reward
 
-    def _get_done(self) -> None:
+    def _get_done(self) -> bool:
         """Look up if the episode is finished."""
         return self.reward_info["goal_reached"]
 
@@ -603,10 +603,14 @@ class TissueRetractionEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info}
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
-        # Reset from parent class
-        super().reset()
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
+
+        # Seed the instrument
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(1)
+            self.end_effector.seed(seeds[0])
+            self.unconsumed_seed = False
 
         # Reset end_effector and phase
         self._phase = Phase.GRASPING
@@ -626,7 +630,7 @@ class TissueRetractionEnv(SofaEnv):
         for _ in range(self._settle_steps):
             self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
     def get_gripper(self) -> EndEffector:
         """Return the EndEffector of the scene."""
@@ -664,7 +668,6 @@ if __name__ == "__main__":
         observation_type=ObservationType.RGB,
         action_type=ActionType.CONTINUOUS,
         render_mode=RenderMode.HUMAN,
-        render_framework=RenderFramework.PYGAME,
         collision_punishment_mode=CollisionPunishmentMode.CONTACTDISTANCE,
         observe_phase_state=False,
         image_shape=(480, 480),
@@ -707,7 +710,8 @@ if __name__ == "__main__":
 
     while not done:
         start = time.time()
-        obs, reward, done, info = env.step(no_action)
+        obs, reward, terminated, truncated, info = env.step(no_action)
+        done = terminated or truncated
         end = time.time()
         fps = 1 / (end - start)
         fps_list.append(fps)

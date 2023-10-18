@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import defaultdict, deque
@@ -85,7 +84,7 @@ class TissueDissectionEnv(SofaEnv):
             "delta_distance_cauter_border_point": -0.0,
             "cut_connective_tissue": 0.0,
             "cut_tissue": -0.0,
-            "worspace_violation": -0.0,
+            "workspace_violation": -0.0,
             "state_limits_violation": -0.0,
             "rcm_violation_xyz": -0.0,
             "rcm_violation_rpy": -0.0,
@@ -152,10 +151,10 @@ class TissueDissectionEnv(SofaEnv):
         self.control_retraction_force = control_retraction_force
         if action_type == ActionType.CONTINUOUS:
             self._scale_action = self._scale_continuous_action
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
         else:
             self._scale_action = self._scale_discrete_action
-            self.action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+            self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
             if control_retraction_force:
                 raise NotImplementedError("Discrete actions are currently not supported for controlling the retraction force.")
 
@@ -192,19 +191,19 @@ class TissueDissectionEnv(SofaEnv):
             # border_point -> 3
             # retraction_force if control_retraction_force else 0
             observations_size = 5 + 7 + 3 * num_tracking_points_tissue + 3 * num_tracking_points_connective_tissue + 3 + 3 * control_retraction_force
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         # RGB + Depth observations
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         # Depthmap
         elif observation_type == ObservationType.DEPTH:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
 
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -239,9 +238,6 @@ class TissueDissectionEnv(SofaEnv):
         self.retraction_force = self.scene_creation_result["retraction_force"]
         self.topology_info: dict = self.scene_creation_result["topology_info"]
 
-        seeds = self.seed_sequence.spawn(1)
-        self.cauter.seed(seed=seeds[0])
-
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the gripper.
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.cauter.cartesian_workspace["high"] - self.cauter.cartesian_workspace["low"])
@@ -265,7 +261,7 @@ class TissueDissectionEnv(SofaEnv):
             return_indices=True,
         )
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
@@ -273,10 +269,10 @@ class TissueDissectionEnv(SofaEnv):
         reward = self._get_reward()
         # Calculate reward first, to update the tracking indices
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_continuous_action(self, action: np.ndarray) -> np.ndarray:
         """
@@ -310,7 +306,7 @@ class TissueDissectionEnv(SofaEnv):
             - delta_distance_cauter_border_point (float): Change in distance between the cauter and the border point of the connective tissue.
             - cut_connective_tissue (int): Number of tetrahedra  of the connective tissue that were cut since the last step.
             - cut_tissue (int): Number of tetrahedra of the tissue that were cut since the last step.
-            - worspace_violation (float): 1.0 if the cauter action would have violated the workspace, 0.0 otherwise.
+            - workspace_violation (float): 1.0 if the cauter action would have violated the workspace, 0.0 otherwise.
             - state_limits_violation (float): 1.0 if the cauter action would have violated the state limits, 0.0 otherwise.
             - rcm_violation_xyz (float): Cartesian difference between desired and actual cauter position.
             - rcm_violation_rpy (float): Rotation angle difference between desired and actual cauter orientation in Degrees.
@@ -384,7 +380,7 @@ class TissueDissectionEnv(SofaEnv):
             )
 
         # State and workspace limits
-        reward_features["worspace_violation"] = float(self.cauter.last_set_state_violated_workspace_limits)
+        reward_features["workspace_violation"] = float(self.cauter.last_set_state_violated_workspace_limits)
         reward_features["state_limits_violation"] = float(self.cauter.last_set_state_violated_state_limits)
         rcm_difference = self.cauter.get_pose_difference(position_norm=True)
         reward_features["rcm_violation_xyz"] = rcm_difference[0] * self._distance_normalization_factor
@@ -483,11 +479,14 @@ class TissueDissectionEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
-        # Reset from parent class -> calls the simulation's reset function
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
 
-        super().reset()
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(1)
+            self.cauter.seed(seed=seeds[0])
+            self.unconsumed_seed = False
 
         # Reset the gripper
         self.cauter.reset_cauter()
@@ -542,7 +541,7 @@ class TissueDissectionEnv(SofaEnv):
         else:
             self.reward_features["distance_cauter_border_point"] = 0.0
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -570,7 +569,8 @@ if __name__ == "__main__":
     while not done:
         for _ in range(100):
             start = time.perf_counter()
-            obs, reward, done, info = env.step(env.action_space.sample())
+            obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+            done = terminated or truncated
             if counter == 200:
                 env.reset()
                 counter = 0

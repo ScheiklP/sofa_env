@@ -2,13 +2,16 @@ from sofa_env.utils.human_input import XboxController
 from sofa_env.wrappers.trajectory_recorder import TrajectoryRecorder
 from sofa_env.wrappers.realtime import RealtimeWrapper
 from sofa_env.scenes.deflect_spheres.deflect_spheres_env import DeflectSpheresEnv, Mode, ObservationType, ActionType, RenderMode
+
 import cv2
-from typing import Dict, Tuple
 import numpy as np
 import time
+import argparse
+
+from copy import deepcopy
 from collections import deque
 from pathlib import Path
-import argparse
+from typing import Dict, Tuple
 
 
 if __name__ == "__main__":
@@ -66,6 +69,31 @@ if __name__ == "__main__":
             )
             self.trajectory["rgb"].append(observation)
 
+        def save_instrument_states(self: TrajectoryRecorder):
+            self.trajectory["right_ptsd_state"].append(deepcopy(self.env.right_cauter.get_state()))
+            self.trajectory["right_pose"].append(deepcopy(self.env.right_cauter.get_pose()))
+            self.trajectory["left_ptsd_state"].append(deepcopy(self.env.left_cauter.get_state()))
+            self.trajectory["left_pose"].append(deepcopy(self.env.left_cauter.get_pose()))
+
+        def save_instrument_velocities(self: TrajectoryRecorder):
+            if len(self.trajectory["right_ptsd_state"]) == 1:
+                right_ptsd_velocity = np.zeros_like(self.trajectory["right_ptsd_state"][0])
+                left_ptsd_velocity = np.zeros_like(self.trajectory["right_ptsd_state"])[0]
+            else:
+                previous_right_ptsd_state = self.trajectory["right_ptsd_state"][-2]
+                previous_left_ptsd_state = self.trajectory["left_ptsd_state"][-2]
+                right_ptsd_velocity = (self.env.right_cauter.get_state() - previous_right_ptsd_state) / (self.env.time_step * self.env.frame_skip)
+                left_ptsd_velocity = (self.env.left_cauter.get_state() - previous_left_ptsd_state) / (self.env.time_step * self.env.frame_skip)
+
+            self.trajectory["right_ptsd_velocity"].append(right_ptsd_velocity)
+            self.trajectory["left_ptsd_velocity"].append(left_ptsd_velocity)
+
+        def save_post_states(self: TrajectoryRecorder):
+            number_of_spheres = self.env.num_objects
+            self.trajectory["sphere_positions"].append(deepcopy(self.trajectory["observation"][-1][: number_of_spheres * 3]))
+            self.trajectory["active_sphere_position"].append(deepcopy(self.trajectory["observation"][-1][number_of_spheres * 3 : (number_of_spheres + 1) * 3]))
+            self.trajectory["active_agent"].append(deepcopy(self.trajectory["observation"][-1][-12]))
+
         metadata = {
             "frame_skip": env.frame_skip,
             "time_step": env.time_step,
@@ -79,12 +107,35 @@ if __name__ == "__main__":
             log_dir="trajectories",
             metadata=metadata,
             store_info=True,
-            save_compressed_keys=["observation", "terminal_observation", "rgb", "info"],
-            after_step_callbacks=[store_rgb_obs],
-            after_reset_callbacks=[store_rgb_obs],
+            save_compressed_keys=[
+                "observation",
+                "terminal_observation",
+                "rgb",
+                "info",
+                "right_ptsd_state",
+                "right_ptsd_velocity",
+                "right_pose",
+                "left_ptsd_state",
+                "left_ptsd_velocity",
+                "left_pose",
+                "sphere_positions",
+                "active_sphere_position",
+            ],
+            after_step_callbacks=[
+                store_rgb_obs,
+                save_instrument_states,
+                save_instrument_velocities,
+                save_post_states,
+            ],
+            after_reset_callbacks=[
+                store_rgb_obs,
+                save_instrument_states,
+                save_instrument_velocities,
+                save_post_states,
+            ],
         )
 
-    reset_obs = env.reset()
+    reset_obs, reset_info = env.reset()
     if video_writer is not None:
         video_writer.write(env.render()[:, :, ::-1])
 
@@ -120,7 +171,8 @@ if __name__ == "__main__":
         action[2] = controller.b - controller.x
         action[3] = rt - lt
 
-        obs, reward, done, info = env.step(sample_action)
+        obs, reward, terminated, truncated, info = env.step(sample_action)
+        done = terminated or truncated
         if video_writer is not None:
             video_writer.write(env.render()[:, :, ::-1])
 
