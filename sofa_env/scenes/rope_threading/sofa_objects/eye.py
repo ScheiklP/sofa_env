@@ -51,8 +51,12 @@ class Eye:
         self.peg_pose[:3] = position
         self.peg_pose[3:] = quaternion
 
-        self.rotation = rotation
+        # position and rotation will contain the current pose, initial_position and initial_rotation are used as
+        # a base position that the noise is added to when resetting
+        self.initial_position = position
         self.position = position
+        self.initial_rotation = rotation
+        self.rotation = rotation
 
         self.index = index
         self.state = EyeStates.OPEN
@@ -83,7 +87,7 @@ class Eye:
         self.center_pose[:3] = np.array(position) + point_rotation_by_quaternion(np.array([1.55, 0.0, 18.7]), quaternion)
         self.center_pose[3:] = quaternion
         self.center_node.addObject("MechanicalObject", template="Rigid3d", position=self.center_pose, showObject=show_object, showObjectScale=show_object_scale)
-        self.center_node.addObject("RigidRigidMapping", globalToLocalCoords=True)
+        self.center_node.addObject("RigidMapping", template="Rigid3,Rigid3", globalToLocalCoords=True)
 
         self.render_index = render_index
         if render_index:
@@ -122,14 +126,16 @@ class Eye:
         """
         set_color(self.rigid_object.visual_model_node.OglModel, color)
 
-    def set_state(self, state: EyeStates) -> None:
-        """Set the state of the eye and the color of the visual model.
+    def set_state(self, state: EyeStates, color_eyes: bool = False) -> None:
+        """Set the state of the eye and optionally the color of the visual model.
 
         Args:
             state (EyeStates): The state of the eye.
+            color_eyes (bool): Whether to adapt eye color to current state.
         """
         self.state = state
-        self.set_color(state.value)
+        if color_eyes:
+            self.set_color(state.value)
 
     def get_state(self) -> EyeStates:
         """Get the state of the eye.
@@ -155,7 +161,7 @@ class Eye:
         """If the Eye was initialized with position_reset_noise, add some noise to the initial position and rotation of the Eye."""
         if self.position_reset_noise is not None:
 
-            xyzphi = np.append(self.position, self.rotation) + self.rng.uniform(
+            xyzphi = np.append(self.initial_position, self.initial_rotation) + self.rng.uniform(
                 self.position_reset_noise["low"],
                 self.position_reset_noise["high"],
             )
@@ -166,6 +172,8 @@ class Eye:
             self.peg_pose[3:] = quaternion
             self.center_pose[:3] = xyzphi[:3] + point_rotation_by_quaternion(np.array([1.55, 0.0, 18.7]), quaternion)
             self.center_pose[3:] = quaternion
+            self.position = xyzphi[:3]
+            self.rotation = xyzphi[3]
 
             new_pose = np.append(xyzphi[:3], quaternion)
             with self.rigid_object.mechanical_object.position.writeable() as pose:

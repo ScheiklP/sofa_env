@@ -102,7 +102,7 @@ if __name__ == "__main__":
             after_reset_callbacks=[store_rgb_obs],
         )
 
-    reset_obs = env.reset()
+    reset_obs, reset_info = env.reset()
     if video_writer is not None:
         video_writer.write(env.render()[:, :, ::-1])
     done = False
@@ -119,7 +119,8 @@ if __name__ == "__main__":
         else:
             action = np.array([rx, -ry])
 
-        obs, reward, done, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
         render_image = env.render()[:, :, ::-1]
 
         cv2.imshow("Sofa", render_image)

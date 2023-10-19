@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import deque, defaultdict
@@ -102,6 +101,8 @@ class ObservationType(Enum):
 class ActionType(Enum):
     DISCRETE = 0
     CONTINUOUS = 1
+    VELOCITY = 2
+    POSITION = 3
 
 
 class RopeThreadingEnv(SofaEnv):
@@ -196,28 +197,48 @@ class RopeThreadingEnv(SofaEnv):
         ##############
         self.individual_agents = individual_agents
         self.single_agent = only_right_gripper
+
+        self.action_type = action_type
+        if action_type == ActionType.CONTINUOUS:
+            action_space_limits = {
+                "low": -1.0,
+                "high": 1.0,
+            }
+            # Scale 1.0 to the maximum velocity
+            self._maximum_state_velocity = maximum_state_velocity
+            self._scale_action = self._scale_continuous_action
+        elif action_type == ActionType.VELOCITY:
+            action_space_limits = {
+                "low": -maximum_state_velocity,
+                "high": maximum_state_velocity,
+            }
+            # Do not scale the velocity, as it is already scaled
+            self._maximum_state_velocity = 1.0
+            self._scale_action = self._scale_continuous_action
+        elif action_type == ActionType.POSITION:
+            # Same as the state limits of the instruments
+            action_space_limits = {
+                "low": np.array([-90.0, -90.0, np.finfo(np.float16).min, 0.0, 0.0]),
+                "high": np.array([90.0, 90.0, np.finfo(np.float16).max, 100.0, 60.0]),
+            }
+        else:
+            raise NotImplementedError("RopeThreadingEnv currently only supports continuous actions.")
+
         if only_right_gripper:
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
+            self.action_space = spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(5,), dtype=np.float32)
             self._do_action = self._do_action_array_single_agent
         else:
             if individual_agents:
-                self.action_space = gym.spaces.Dict(
+                self.action_space = spaces.Dict(
                     {
-                        "left_gripper": gym.spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32),
-                        "right_gripper": gym.spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32),
+                        "left_gripper": spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(5,), dtype=np.float32),
+                        "right_gripper": spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(5,), dtype=np.float32),
                     }
                 )
                 self._do_action = self._do_action_dict
             else:
-                self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
+                self.action_space = spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(10,), dtype=np.float32)
                 self._do_action = self._do_action_array
-
-        self.action_type = action_type
-        if action_type == ActionType.CONTINUOUS:
-            self._maximum_state_velocity = maximum_state_velocity
-            self._scale_action = self._scale_continuous_action
-        else:
-            raise NotImplementedError("RopeThreadingEnv currently only supports continuous actions.")
 
         ###################
         # Observation Space
@@ -235,14 +256,14 @@ class RopeThreadingEnv(SofaEnv):
             # active eye pose -> 4
             times = 1 if self.single_agent else 2
             observations_size = (1 + 5 + 7) * times + 3 + num_rope_tracking_points * 3 + 4
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -285,12 +306,6 @@ class RopeThreadingEnv(SofaEnv):
         self.contact_listeners: Dict[str, list] = self.scene_creation_result["contact_listeners"]
         self.camera: Camera = self.scene_creation_result["camera"]
 
-        seeds = self.seed_sequence.spawn(len(self.eyes) + 2)
-        for index, eye in enumerate(self.eyes):
-            eye.seed(seeds[index])
-        self.left_gripper.seed(seed=seeds[-2])
-        self.right_gripper.seed(seed=seeds[-1])
-
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the grippers.
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.left_gripper.cartesian_workspace["high"] - self.left_gripper.cartesian_workspace["low"])
@@ -324,17 +339,16 @@ class RopeThreadingEnv(SofaEnv):
         value = np.clip(value, -1.0 / self._distance_normalization_factor, 1.0 / self._distance_normalization_factor)
         return value
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
-
         maybe_rgb_observation = super().step(action)
 
-        observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
+        observation = self._get_observation(maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _do_action(self, action) -> None:
         """Only defined to satisfy ABC."""
@@ -351,17 +365,28 @@ class RopeThreadingEnv(SofaEnv):
 
     def _do_action_dict(self, action: Dict[str, np.ndarray]) -> None:
         """Apply action to the simulation."""
-        self.left_gripper.set_articulated_state(self.left_gripper.get_articulated_state() + self._scale_action(action["left_gripper"]))
-        self.right_gripper.set_articulated_state(self.right_gripper.get_articulated_state() + self._scale_action(action["right_gripper"]))
+        if self.action_type == ActionType.POSITION:
+            self.left_gripper.set_articulated_state(action["left_gripper"])
+            self.right_gripper.set_articulated_state(action["right_gripper"])
+        else:
+            self.left_gripper.set_articulated_state(self.left_gripper.get_articulated_state() + self._scale_action(action["left_gripper"]))
+            self.right_gripper.set_articulated_state(self.right_gripper.get_articulated_state() + self._scale_action(action["right_gripper"]))
 
     def _do_action_array(self, action: np.ndarray) -> None:
         """Apply action to the simulation."""
-        self.left_gripper.set_articulated_state(self.left_gripper.get_articulated_state() + self._scale_action(action[:5]))
-        self.right_gripper.set_articulated_state(self.right_gripper.get_articulated_state() + self._scale_action(action[5:]))
+        if self.action_type == ActionType.POSITION:
+            self.left_gripper.set_articulated_state(action[:5])
+            self.right_gripper.set_articulated_state(action[5:])
+        else:
+            self.left_gripper.set_articulated_state(self.left_gripper.get_articulated_state() + self._scale_action(action[:5]))
+            self.right_gripper.set_articulated_state(self.right_gripper.get_articulated_state() + self._scale_action(action[5:]))
 
     def _do_action_array_single_agent(self, action: np.ndarray) -> None:
         """Apply action to the simulation."""
-        self.right_gripper.set_articulated_state(self.right_gripper.get_articulated_state() + self._scale_action(action))
+        if self.action_type == ActionType.POSITION:
+            self.right_gripper.set_articulated_state(action)
+        else:
+            self.right_gripper.set_articulated_state(self.right_gripper.get_articulated_state() + self._scale_action(action))
 
     def _get_reward(self) -> float:
         """Calculate the reward for the Rope Threading task.
@@ -441,12 +466,12 @@ class RopeThreadingEnv(SofaEnv):
                 if not len(self.rope.get_indices_in_sphere(0)):
                     # mark it as lost
                     self.reward_info["lost_eye"] += 1
-                    self.eyes[0].set_state(EyeStates.OPEN)
+                    self.eyes[0].set_state(EyeStates.OPEN, self.color_eyes)
 
         if self.active_index > 0:
             # rope has n sphere ROIs for n eyes -> traverse back, until there is one, where rope indices are inside
             while not len(self.rope.get_indices_in_sphere(max(0, self.active_index - 1))):
-                self.eyes[self.active_index].set_state(EyeStates.OPEN)
+                self.eyes[self.active_index].set_state(EyeStates.OPEN, self.color_eyes)
                 self.active_index = max(0, self.active_index - 1)
                 self.reward_info["lost_eye"] += 1
                 if self.active_index == 0:
@@ -466,7 +491,7 @@ class RopeThreadingEnv(SofaEnv):
             # bimanual_grasp part every step.
             pass
         else:
-            self.eyes[self.active_index].set_state(EyeStates.NEXT)
+            self.eyes[self.active_index].set_state(EyeStates.NEXT, self.color_eyes)
 
         ########################
         # Distance based rewards
@@ -532,6 +557,7 @@ class RopeThreadingEnv(SofaEnv):
             # 3. the larger indices of the rope are right of the eye
             start_and_end_sign = self.eyes[self.active_index].points_are_right_of_eye(rope_positions[indices_in_eye[[0, -1]]])
             rope_is_on_both_sides = start_and_end_sign[0] < 0 and start_and_end_sign[1] > 0
+
             if self.fraction_of_rope_to_pass is not None:
                 fraction_passed = (indices_in_eye[0] + 1) / self.rope.num_points
                 # If the rope is passed through the eye, remove the distance based rewards from the reward
@@ -551,6 +577,8 @@ class RopeThreadingEnv(SofaEnv):
                     self.reward_info["delta_fraction_rope_passed"] = fraction_passed * rope_is_on_both_sides - previous_fraction_rope_passed
                     self.reward_info["reward_from_delta_fraction_rope_passed"] = self.reward_info["delta_fraction_rope_passed"] * self.reward_amount_dict["delta_fraction_rope_passed"]
                     reward += self.reward_info["reward_from_delta_fraction_rope_passed"]
+            else:
+                passed_through = rope_is_on_both_sides
 
         else:
             passed_through = False
@@ -568,7 +596,7 @@ class RopeThreadingEnv(SofaEnv):
                 reward += self.reward_info["reward_from_passed_eyes"]
                 self.reward_info["passed_eye"] = True
                 # Swith the state to TRANSITION
-                self.eyes[self.active_index].set_state(EyeStates.TRANSITION)
+                self.eyes[self.active_index].set_state(EyeStates.TRANSITION, self.color_eyes)
 
             # Give rewards to the second gripper for moving closer to the rope tip -> incentive to grasp
             if self.left_gripper.grasp_established:
@@ -592,7 +620,7 @@ class RopeThreadingEnv(SofaEnv):
                 self.reward_info["reward_from_bimanual_grasp"] = self.reward_amount_dict["bimanual_grasp"]
                 reward += self.reward_info["reward_from_bimanual_grasp"]
                 self.reward_info["bimanual_grasp"] = True
-                self.eyes[self.active_index].set_state(EyeStates.DONE)
+                self.eyes[self.active_index].set_state(EyeStates.DONE, self.color_eyes)
                 self.active_index += 1
                 # When switching to the next eye, update the distance to the active eye with the next eye.
                 # Otherwise there would be a large negative delta distance in the next step.
@@ -605,7 +633,7 @@ class RopeThreadingEnv(SofaEnv):
             self.reward_info["reward_from_passed_eyes"] = self.reward_amount_dict["passed_eye"]
             reward += self.reward_info["reward_from_passed_eyes"]
             self.reward_info["passed_eye"] = True
-            self.eyes[self.active_index].set_state(EyeStates.DONE)
+            self.eyes[self.active_index].set_state(EyeStates.DONE, self.color_eyes)
             self.active_index += 1
             # When switching to the next eye, update the distance to the active eye with the next eye.
             # Otherwise there would be a large negative delta distance in the next step.
@@ -645,6 +673,9 @@ class RopeThreadingEnv(SofaEnv):
         self.reward_info["right_gripper_violated_state_limits"] = self.right_gripper.last_set_state_violated_state_limits
         self.reward_info["reward_from_state_limit_violations"] = self.reward_amount_dict["state_limit_violation"] * (self.reward_info["left_gripper_violated_state_limits"] + self.reward_info["right_gripper_violated_state_limits"])
         self.reward_info["reward_from_workspace_violations"] = self.reward_amount_dict["workspace_violation"] * (self.reward_info["left_gripper_violated_workspace"] + self.reward_info["right_gripper_violated_workspace"])
+
+        reward += self.reward_info["reward_from_state_limit_violations"]
+        reward += self.reward_info["reward_from_workspace_violations"]
 
         ################
         # Win condition
@@ -734,10 +765,17 @@ class RopeThreadingEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info}
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
-        # Reset from parent class
-        super().reset()
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
+
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(len(self.eyes) + 2)
+            for index, eye in enumerate(self.eyes):
+                eye.seed(seeds[index])
+            self.left_gripper.seed(seed=seeds[-2])
+            self.right_gripper.seed(seed=seeds[-1])
+            self.unconsumed_seed = False
 
         # Reset scene objects
         self.left_gripper.reset_gripper()
@@ -749,9 +787,7 @@ class RopeThreadingEnv(SofaEnv):
         # Reset the eye states and optionally colors
         new_waypoint_positions = []
         for eye in self.eyes:
-            eye.state = EyeStates.OPEN
-            if self.color_eyes:
-                eye.set_color(EyeStates.OPEN.value)
+            eye.set_state(EyeStates.OPEN, self.color_eyes)
             eye.reset()
             new_waypoint_positions.append(eye.center_pose[:3])
 
@@ -759,8 +795,7 @@ class RopeThreadingEnv(SofaEnv):
         self.rope.sphere_roi_center = new_waypoint_positions
 
         self.active_index = 0
-        self.eyes[0].state = EyeStates.NEXT
-        self.eyes[0].set_color(EyeStates.NEXT.value)
+        self.eyes[0].set_state(EyeStates.NEXT, self.color_eyes)
 
         # Clear the episode info values
         for key in self.episode_info:
@@ -792,7 +827,7 @@ class RopeThreadingEnv(SofaEnv):
         # Initial distance between rope and the active eye
         self.distance_to_eye = self.constrained_value(np.linalg.norm(self.rope.get_positions()[0] - self.eyes[self.active_index].center_pose[:3]))
 
-        return self._get_observation(self._maybe_update_rgb_buffer())
+        return self._get_observation(self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -811,9 +846,11 @@ if __name__ == "__main__":
     env = RopeThreadingEnv(
         observation_type=ObservationType.STATE,
         render_mode=RenderMode.HUMAN,
+        action_type=ActionType.VELOCITY,
         image_shape=(800, 800),
-        frame_skip=1,
+        frame_skip=10,
         time_step=0.01,
+        settle_steps=20,
         reward_amount_dict={
             "passed_eye": 10.0,
             "lost_eye": -20.0,  # more than passed_eye
@@ -844,80 +881,25 @@ if __name__ == "__main__":
         only_right_gripper=False,
         individual_agents=True,
         num_rope_tracking_points=10,
-        maximum_state_velocity=np.array([8, 8, 30, 15, 8]),
     )
 
     env.reset()
     done = False
 
-    # waypoints = [
-    #     ("right_gripper", np.array([0, 0, 180, 50], dtype=np.float64)),
-    #     ("right_gripper", np.array([0, -9, 180, 65], dtype=np.float64)),
-    #     ("right_gripper", np.array([22, -9, 180, 65], dtype=np.float64)),
-    #     ("right_gripper", np.array([22, -9, 180, 75], dtype=np.float64)),
-    #     # ("right_gripper", np.array([0, -9, 180, 75], dtype=np.float64)),
-    #     # ("right_gripper", np.array([0, -9, 180, 65], dtype=np.float64)),
-    #     # ("right_gripper", np.array([22, -9, 180, 65], dtype=np.float64)),
-    #     # ("right_gripper", np.array([22, -9, 180, 75], dtype=np.float64)),
-    #     ("left_gripper", np.array([-31, -8, 180, 50], dtype=np.float64)),
-    #     ("left_gripper", np.array([-31, -8, 180, 77], dtype=np.float64)),
-    # ]
-
-    # follow_waypoints(waypoints, env)
-
-    # change_grasp(left_to_right=False, env=env)
-
-    # waypoints = [
-    #     ("left_gripper", np.array([-31, -8, 180, 77], dtype=np.float64)),
-    #     ("left_gripper", np.array([-13, -8, 180, 73.5], dtype=np.float64)),
-    #     ("left_gripper", np.array([-10, -8, 180, 73.5], dtype=np.float64)),
-    # ]
-
-    # follow_waypoints(waypoints, env)
-
-    # waypoints = [
-    #     ("right_gripper", np.array([22, -9, 180, 75], dtype=np.float64)),
-    #     ("right_gripper", np.array([22, -8, 180, 60], dtype=np.float64)),
-    #     ("right_gripper", np.array([33, -8, 180, 60], dtype=np.float64)),
-    #     ("right_gripper", np.array([33, -8, 180, 79], dtype=np.float64)),
-    #     ("right_gripper", np.array([37, -8, 180, 92], dtype=np.float64)),
-    #     ("right_gripper", np.array([37, -8, 180, 95], dtype=np.float64)),
-    # ]
-
-    # follow_waypoints(waypoints, env)
-
-    # change_grasp(left_to_right=True, env=env)
-
-    # waypoints = [
-    #     ("left_gripper", np.array([-13, -8, 180, 70], dtype=np.float64)),
-    #     ("left_gripper", np.array([-13, -8, 180, 50], dtype=np.float64)),
-    #     ("left_gripper", np.array([0, 0, 180, 50], dtype=np.float64)),
-    #     ("right_gripper", np.array([37, -8, 180, 100], dtype=np.float64)),
-    #     ("right_gripper", np.array([42, -8, 180, 95], dtype=np.float64)),
-    #     ("left_gripper", np.array([0, -8, 180, 50], dtype=np.float64)),
-    #     ("left_gripper", np.array([0, -8, 180, 62], dtype=np.float64)),
-    # ]
-
-    # follow_waypoints(waypoints, env)
-
-    # change_grasp(left_to_right=False, env=env)
-
-    # waypoints = [
-    #     ("left_gripper", np.array([0, -8, 180, 62], dtype=np.float64)),
-    #     ("left_gripper", np.array([8, -8, 180, 62], dtype=np.float64)),
-    #     ("left_gripper", np.array([8, -8, 270, 62], dtype=np.float64)),
-    #     ("left_gripper", np.array([-4, -33, 320, 80], dtype=np.float64)),
-    # ]
-
-    # follow_waypoints(waypoints, env)
-
-    # wait_for_n(100, env)
-
     fps_list = deque(maxlen=100)
     while not done:
         start = time.perf_counter()
         action = env.action_space.sample()
-        obs, reward, done, info = env.step(action)
+        for key, val in action.items():
+            action[key] = 3.0
+        # TODO: remove this
+        with env.scene_creation_result["board_mo"].position.writeableArray() as pose:
+            pose[0, 0] -= 1.0
+        previous_state = env.right_gripper.get_articulated_state().copy()
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        current_state = env.right_gripper.get_articulated_state().copy()
+        print(f"State Velocity: {(current_state - previous_state)/(env.time_step*env.frame_skip)}")
         end = time.perf_counter()
         fps = 1 / (end - start)
         fps_list.append(fps)

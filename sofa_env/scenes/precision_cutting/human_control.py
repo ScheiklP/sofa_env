@@ -111,7 +111,7 @@ if __name__ == "__main__":
             after_reset_callbacks=[store_rgb_obs],
         )
 
-    reset_obs = env.reset()
+    reset_obs, reset_info = env.reset()
     if video_writer is not None:
         video_writer.write(env.render()[:, :, ::-1])
 
@@ -140,7 +140,8 @@ if __name__ == "__main__":
                 action[2] = lx
                 action[3] = rt - lt
                 action[4] = controller.a - controller.b
-        obs, reward, done, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
 
         if video_writer is not None:
             video_writer.write(env.render()[:, :, ::-1])

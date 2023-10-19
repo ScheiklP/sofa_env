@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import defaultdict, deque
@@ -147,11 +146,11 @@ class ThreadInHoleEnv(SofaEnv):
         action_dimensionality = 4
         self.action_type = action_type
         if action_type == ActionType.CONTINUOUS:
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
             self._maximum_state_velocity = maximum_state_velocity
             self._scale_action = self._scale_continuous_action
         else:
-            self.action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+            self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
             self._scale_action = self._scale_discrete_action
 
             if isinstance(discrete_action_magnitude, np.ndarray):
@@ -191,19 +190,19 @@ class ThreadInHoleEnv(SofaEnv):
             # thread_tracking_point_positions -> num_thread_tracking_points * 3
             # hole_opening_position -> 3
             observations_size = 4 + 7 + 3 + num_thread_tracking_points * 3 + 3
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         # RGB + Depth observations
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         # Depthmap
         elif observation_type == ObservationType.DEPTH:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
 
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -235,10 +234,6 @@ class ThreadInHoleEnv(SofaEnv):
         self.camera: Camera = self.scene_creation_result["camera"]
         self.contact_listeners: Tuple = self.scene_creation_result["contact_listeners"]
 
-        seeds = self.seed_sequence.spawn(2)
-        self.gripper.seed(seed=seeds[0])
-        self.hole.seed(seed=seeds[1])
-
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the gripper.
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.gripper.cartesian_workspace["high"] - self.gripper.cartesian_workspace["low"])
@@ -269,17 +264,17 @@ class ThreadInHoleEnv(SofaEnv):
 
         self.indices_to_check_for_success = list(range(self.thread.num_points))[int((1 - self.insertion_ratio_threshold) * self.thread.num_points) :]
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_continuous_action(self, action: np.ndarray) -> np.ndarray:
         """
@@ -458,11 +453,15 @@ class ThreadInHoleEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
 
-        # Reset from parent class -> calls the simulation's reset function
-        super().reset()
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(2)
+            self.gripper.seed(seed=seeds[0])
+            self.hole.seed(seed=seeds[1])
+            self.unconsumed_seed = False
 
         # Reset the gripper
         self.gripper.reset_gripper()
@@ -524,7 +523,7 @@ class ThreadInHoleEnv(SofaEnv):
             print(f"[WARNING]: Peg started inside cylinder on reset after {self._settle_steps} steps of letting the simulation settle. Will reset again.")
             self.reset()
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -555,7 +554,8 @@ if __name__ == "__main__":
     while not done:
         for _ in range(100):
             start = time.perf_counter()
-            obs, reward, done, info = env.step(env.action_space.sample())
+            obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+            done = terminated or truncated
             if counter == 20:
                 env.reset()
                 counter = 0

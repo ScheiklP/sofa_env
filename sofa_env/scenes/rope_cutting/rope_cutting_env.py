@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import defaultdict, deque
@@ -7,7 +6,7 @@ from enum import Enum, unique
 from pathlib import Path
 from functools import reduce
 
-from typing import Callable, Union, Tuple, Optional, List, Any
+from typing import Callable, Union, Tuple, Optional, List, Any, Dict
 from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 
 from sofa_env.scenes.rope_cutting.sofa_objects.rope import CuttableRope
@@ -79,7 +78,7 @@ class RopeCuttingEnv(SofaEnv):
             "delta_distance_cauter_active_rope": -0.0,
             "cut_active_rope": 0.0,
             "cut_inactive_rope": -0.0,
-            "worspace_violation": -0.0,
+            "workspace_violation": -0.0,
             "state_limits_violation": -0.0,
             "successful_task": 0.0,
             "failed_task": -0.0,
@@ -132,10 +131,10 @@ class RopeCuttingEnv(SofaEnv):
         self.action_type = action_type
         if action_type == ActionType.CONTINUOUS:
             self._scale_action = self._scale_continuous_action
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
         else:
             self._scale_action = self._scale_discrete_action
-            self.action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+            self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
 
             if isinstance(discrete_action_magnitude, np.ndarray):
                 if not len(discrete_action_magnitude) == action_dimensionality * 2:
@@ -167,14 +166,14 @@ class RopeCuttingEnv(SofaEnv):
             # rope_tracking_points_active -> num_tracking_points_ropes * 3
             # pose -> 7
             observations_size = 4 + 1 + num_tracking_points_ropes * 3 * (num_ropes + 1) + 7
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -204,9 +203,6 @@ class RopeCuttingEnv(SofaEnv):
         self.ropes: List[CuttableRope] = self.scene_creation_result["ropes"]
         self.camera: PhysicalCamera = self.scene_creation_result["physical_camera"]
 
-        seeds = self.seed_sequence.spawn(1)
-        self.cauter.seed(seed=seeds[0])
-
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the cauter.
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.cauter.cartesian_workspace["high"] - self.cauter.cartesian_workspace["low"])
@@ -227,17 +223,17 @@ class RopeCuttingEnv(SofaEnv):
             if self.observation_type == ObservationType.STATE:
                 raise ValueError(f"num_tracking_points_ropes must be > 0 or == -1 (to use them all). Received {self.num_tracking_points_ropes}.")
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_continuous_action(self, action: np.ndarray) -> np.ndarray:
         """
@@ -311,7 +307,7 @@ class RopeCuttingEnv(SofaEnv):
             - delta_distance_cauter_active_rope (float): Change in distance between the cauter and the active rope.
             - cut_active_rope (int): Sum of topological changes of the active rope.
             - cut_inactive_rope (int): Sum of topological changes of the inactive ropes.
-            - worspace_violation (float): 1.0 if the cauter action would have violated the workspace, 0.0 otherwise.
+            - workspace_violation (float): 1.0 if the cauter action would have violated the workspace, 0.0 otherwise.
             - state_limits_violation (float): 1.0 if the cauter action would have violated the state limits, 0.0 otherwise.
         """
 
@@ -343,7 +339,7 @@ class RopeCuttingEnv(SofaEnv):
                     reward_features["inactive_cut_rope_indices"].append(index)
 
         # State and workspace limits
-        reward_features["worspace_violation"] = float(self.cauter.last_set_state_violated_workspace_limits)
+        reward_features["workspace_violation"] = float(self.cauter.last_set_state_violated_workspace_limits)
         reward_features["state_limits_violation"] = float(self.cauter.last_set_state_violated_state_limits)
 
         return reward_features
@@ -457,7 +453,7 @@ class RopeCuttingEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
         """Reset the state of the environment and return the initial observation."""
         # Reset from parent class -> calls the simulation's reset function
 
@@ -466,7 +462,14 @@ class RopeCuttingEnv(SofaEnv):
             if hasattr(self, "_window"):
                 super().close()
             self._init_sim()
-        super().reset()
+
+        super().reset(seed)
+
+        # Seed the instrument
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(1)
+            self.cauter.seed(seed=seeds[0])
+            self.unconsumed_seed = False
 
         self.active_rope_index = self.rng.integers(0, self.num_ropes)
         self.num_cut_ropes = 0
@@ -505,9 +508,8 @@ class RopeCuttingEnv(SofaEnv):
             self.sofa_simulation.animate(self._sofa_root_node, self._settle_step_dt)
             self._maybe_update_rgb_buffer()
 
-        reset_obs = self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
-        return reset_obs
 
 
 if __name__ == "__main__":
@@ -535,7 +537,8 @@ if __name__ == "__main__":
         for _ in range(100):
             start = time.perf_counter()
             action = env.action_space.sample()
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             end = time.perf_counter()
             fps = 1 / (end - start)
             fps_list.append(fps)

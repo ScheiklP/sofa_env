@@ -1,7 +1,7 @@
-from typing import Union, Tuple, Optional, Any
+from typing import Union, Tuple, Optional, Any, Dict
 from pathlib import Path
 from enum import Enum, unique
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 from collections import defaultdict
 
@@ -119,9 +119,9 @@ class MCREnv(SofaEnv):
             # Magnetic field: 3
             # Target position: 3
             observations_size = 3 + 4 + self.num_catheter_tracking_points * 3 + 3 + 3
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
         elif self.observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         ######################
         # Set up action spaces
@@ -129,7 +129,7 @@ class MCREnv(SofaEnv):
         action_dimensionality = 3
         self.action_type = action_type
         if action_type == ActionType.CONTINUOUS:
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
         else:
             raise NotImplementedError("Only continuous action space is implemented.")
 
@@ -142,10 +142,8 @@ class MCREnv(SofaEnv):
         # All parameters of the reward function that are not passed default to 0.0
         self.reward_amount_dict = defaultdict(float) | reward_amount_dict
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
-        # Reset from parent class -> calls the simulation's reset function
-        super().reset()
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
 
         # Reset mcr controller
         self.mcr_controller_sofa.reset()
@@ -161,18 +159,18 @@ class MCREnv(SofaEnv):
         for _ in range(self._settle_steps):
             self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
 
-        return self._get_observation(image_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(image_observation=self._maybe_update_rgb_buffer()), {}
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         image_observation = super().step(action)
         observation = self._get_observation(image_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _get_observation(self, image_observation: Union[np.ndarray, None]) -> Union[np.ndarray, dict]:
         """Assembles the correct observation based on the ``ObservationType``."""
@@ -270,7 +268,7 @@ if __name__ == "__main__":
     env.reset()
     while True:
         action = env.action_space.sample()
-        obs, reward, done, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action)
         print(reward)
         if done:
             break

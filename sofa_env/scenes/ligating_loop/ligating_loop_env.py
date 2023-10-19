@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import defaultdict, deque
@@ -155,34 +154,34 @@ class LigatingLoopEnv(SofaEnv):
             if with_gripper:
                 if individual_agents:
                     self._do_action = self._do_action_dict
-                    self.action_space = gym.spaces.Dict(
+                    self.action_space = spaces.Dict(
                         {
-                            "ligating_loop": gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
-                            "gripper": gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
+                            "ligating_loop": spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
+                            "gripper": spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32),
                         }
                     )
                 else:
                     self._do_action = self._do_action_array
-                    self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality * 2,), dtype=np.float32)
+                    self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality * 2,), dtype=np.float32)
             else:
                 self._do_action = self._do_loop_action
-                self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
+                self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
         else:
             self._scale_action = self._scale_discrete_action
             if with_gripper:
                 if individual_agents:
                     self._do_action = self._do_action_dict
-                    self.action_space = gym.spaces.Dict(
+                    self.action_space = spaces.Dict(
                         {
-                            "ligating_loop": gym.spaces.Discrete(action_dimensionality * 2 + 1),
-                            "gripper": gym.spaces.Discrete(action_dimensionality * 2 + 1),
+                            "ligating_loop": spaces.Discrete(action_dimensionality * 2 + 1),
+                            "gripper": spaces.Discrete(action_dimensionality * 2 + 1),
                         }
                     )
                 else:
                     raise NotImplementedError("Discrete action space not implemented for with_gripper=True and individual_agents=False.")
             else:
                 self._do_action = self._do_loop_action
-                self.action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+                self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
 
             if isinstance(discrete_action_magnitude, np.ndarray):
                 if not len(discrete_action_magnitude) == action_dimensionality * 2:
@@ -224,15 +223,15 @@ class LigatingLoopEnv(SofaEnv):
             observations_size = 4 + 1 + num_tracking_points_loop * 3 + sum(num_tracking_points_cavity.values()) * 3 + sum(num_tracking_points_marking.values()) * 3
             if self.with_gripper:
                 observations_size += 7 + 5
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         # Color image and depth map
         elif self.observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise ValueError(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -264,10 +263,6 @@ class LigatingLoopEnv(SofaEnv):
         self.cavity: Cavity = self.scene_creation_result["cavity"]
         self.camera: ControllableCamera = self.scene_creation_result["camera"]
         self.contact_listeners: Dict = self.scene_creation_result["contact_listeners"]
-
-        if self.gripper is not None:
-            seeds = self.seed_sequence.spawn(1)
-            self.gripper.seed(seed=seeds[0])
 
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the loop.
@@ -512,11 +507,19 @@ class LigatingLoopEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
         """Reset the state of the environment and return the initial observation."""
         # Reset from parent class -> calls the simulation's reset function
+        super().reset(seed)
 
-        super().reset()
+        # Seed the instruments
+        if self.unconsumed_seed:
+            with_gripper = self.gripper is not None
+            seeds = self.seed_sequence.spawn(2 if with_gripper else 1)
+            self.loop.seed(seed=seeds[0])
+            if with_gripper:
+                self.gripper.seed(seed=seeds[1])
+            self.unconsumed_seed = False
 
         self.loop.reset_state()
         self.loop_activation_counter = 0
@@ -553,7 +556,7 @@ class LigatingLoopEnv(SofaEnv):
         for _ in range(self._settle_steps):
             self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":

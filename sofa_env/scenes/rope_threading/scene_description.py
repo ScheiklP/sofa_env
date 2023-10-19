@@ -185,8 +185,6 @@ def createScene(
         "high": np.array([230.0, 180.0, 100.0]),
     }
 
-    board_node = scene_node.addChild("board")
-
     board_limits = {
         "low": np.array([np.inf, np.inf, -5]),
         "high": np.array([-np.inf, -np.inf, 0]),
@@ -205,15 +203,34 @@ def createScene(
         board_limits["high"] = np.maximum(board_limits["high"], xyz_max)
 
     grid_shape = (10, 10, 2)
-    board_node.addObject("RegularGridTopology", min=board_limits["low"], max=board_limits["high"], n=grid_shape)
+    board_node = scene_node.addChild("board")
+
+    # Center position of the board
+    board_pose = np.zeros(7)
+    board_pose[:3] = (board_limits["low"] + board_limits["high"]) / 2
+    board_pose[-1] = 1.0
+
+    # Add the mechanical object that holds the mechanical state of the rigid object
+    board_mechanical_object = board_node.addObject(
+        "MechanicalObject",
+        template="Rigid3d",
+        position=board_pose,
+        showObject=debug_rendering,
+        showObjectScale=10.0,
+    )
+
+    board_visual_node = board_node.addChild("visual")
+    board_visual_node.addObject("RegularGridTopology", min=board_limits["low"], max=board_limits["high"], n=grid_shape)
     if no_textures:
-        board_node.addObject("OglModel", color=[value / 255 for value in [246.0, 205.0, 139.0]])
+        board_visual_node.addObject("OglModel", color=[value / 255 for value in [246.0, 205.0, 139.0]])
+        board_visual_node.addObject("RigidMapping", globalToLocalCoords=True)
     else:
         board_texture_path = TEXTURE_DIR / "wood_texture.png"
-        board_node.addObject("OglModel", texturename=str(board_texture_path))
+        board_visual_node.addObject("OglModel", texturename=str(board_texture_path))
+        board_visual_node.addObject("RigidMapping", globalToLocalCoords=True)
         board_node.init()
         # Fix the texture coordinates
-        with board_node.OglModel.texcoords.writeable() as texcoords:
+        with board_visual_node.OglModel.texcoords.writeable() as texcoords:
             for index, coordinates in enumerate(texcoords):
                 x, y, _ = np.unravel_index(index, grid_shape, "F")
                 coordinates[:] = [x / grid_shape[0], y / grid_shape[1]]
@@ -315,7 +332,6 @@ def createScene(
     for gripper_name in ("left_gripper", "right_gripper"):
         for jaw_name in ("jaw_0", "jaw_1"):
             for eye in eyes:
-
                 instrument = right_gripper if gripper_name == "right_gripper" else left_gripper
                 collision_model = instrument.sphere_collisions_jaw_0 if jaw_name == "jaw_0" else instrument.sphere_collisions_jaw_1
                 contact_listener = eye.rigid_object.node.addObject(
@@ -398,6 +414,7 @@ def createScene(
         "eyes": eyes,
         "contact_listeners": contact_listeners,
         "contact_listener_info": contact_listener_info,
+        "board_mo": board_mechanical_object,
     }
 
     return scene_creation_result

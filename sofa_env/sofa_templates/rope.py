@@ -96,7 +96,6 @@ class Rope:
         check_self_collision: bool = False,
         use_beam_adapter_plugin: bool = False,
     ) -> None:
-
         if use_beam_adapter_plugin:
             ROPE_PLUGIN_LIST.append("BeamAdapter")
 
@@ -154,7 +153,6 @@ class Rope:
             self.node.addObject("FixedConstraint", indices=indices)
 
         if use_beam_adapter_plugin:
-
             if total_mass is None:
                 total_mass = 1.0
 
@@ -168,7 +166,7 @@ class Rope:
             rope_length = 0.0
             for i in range(len(poses) - 1):
                 rope_length += np.linalg.norm(poses[i][:3] - poses[i + 1][:3])
-            rope_volume = rope_length * np.pi * self.beam_radius ** 2
+            rope_volume = rope_length * np.pi * self.beam_radius**2
             mass_density = total_mass / rope_volume
             ADAPTIVE_BEAM_FORCE_FIELD_KWARGS = {
                 "massDensity": mass_density,
@@ -272,9 +270,18 @@ class Rope:
             output=tube_mechanical_object.getLinkPath(),
         )
 
+        triangle_tube_node = tube_node.addChild("triangle_tube")
+        triangle_topology = triangle_tube_node.addObject("TriangleSetTopologyContainer")
+        triangle_tube_node.addObject("TriangleSetTopologyModifier")
+        triangle_tube_node.addObject(
+            "Quad2TriangleTopologicalMapping",
+            input=tube_topology.getLinkPath(),
+            output=triangle_topology.getLinkPath(),
+        )
+
         # OGL visual model
         visual_node = tube_node.addChild("visual")
-        self.ogl_model = visual_node.addObject("OglModel", color=[color / 255 for color in rope_color])
+        self.ogl_model = visual_node.addObject("OglModel", color=[color / 255 for color in rope_color], triangles=triangle_topology.triangles.getLinkPath())
         visual_node.addObject("IdentityMapping", input=tube_mechanical_object.getLinkPath(), output=self.ogl_model.getLinkPath())
 
     def get_state(self) -> np.ndarray:
@@ -462,7 +469,6 @@ class CosseratRope:
         start_position: np.ndarray = np.array([0.0, 0.0, 0.0]),
         rest_bend_state: CosseratBending = CosseratBending.LINE,
     ) -> None:
-
         # Node information
         self.parent_node = parent_node
         self.name = name

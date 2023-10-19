@@ -5,8 +5,7 @@ from pathlib import Path
 from functools import reduce
 
 import numpy as np
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 
 from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.precision_cutting.sofa_objects.gripper import ArticulatedGripper
@@ -163,11 +162,11 @@ class PrecisionCuttingEnv(SofaEnv):
         self.action_type = action_type
         if action_type == ActionType.CONTINUOUS:
             self._scale_action = self._scale_continuous_action
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dims,), dtype=np.float32)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dims,), dtype=np.float32)
         else:
             discrete_action_magnitude = discrete_cartesian_action_magnitude if cartesian_control else discrete_state_action_magnitude
             self._scale_action = self._scale_discrete_action
-            self.action_space = gym.spaces.Discrete(2 * action_dims + 1)
+            self.action_space = spaces.Discrete(2 * action_dims + 1)
             # [step, 0, 0, ...], [-step, 0, 0, ...], [0, step, 0, ...], [0, -step, 0, ...]
             if isinstance(discrete_action_magnitude, np.ndarray):
                 steps, num_steps = discrete_action_magnitude, len(discrete_action_magnitude)
@@ -208,16 +207,16 @@ class PrecisionCuttingEnv(SofaEnv):
             observations_size += 3 * num_tracking_points_on_cutting_path
             # closest path point -> 3
             observations_size += 3
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
         # RGB + Depth observations
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
         # Depthmap
         elif observation_type == ObservationType.DEPTH:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
         self.observation_type = observation_type
@@ -239,10 +238,6 @@ class PrecisionCuttingEnv(SofaEnv):
         self.on_reset_callbacks = on_reset_callbacks if on_reset_callbacks is not None else []
 
     def _init_sim(self) -> None:
-        if self.seed_sequence is None:
-            self.seed_sequence = np.random.SeedSequence()
-            self.rng = np.random.default_rng(self.seed_sequence)
-
         if self.cloth_cutting_path_func_generator is not None:
             self.create_scene_kwargs["cloth_cutting_path_func"] = self.cloth_cutting_path_func_generator(self.rng)
 
@@ -254,9 +249,6 @@ class PrecisionCuttingEnv(SofaEnv):
         self.camera: Camera = self.scene_creation_result["camera"]
         self.closest_path_point_mechanical_object = self.scene_creation_result["closest_path_point_mechanical_object"]
 
-        seeds = self.seed_sequence.spawn(1)
-        self.scissors.seed(seed=seeds[0])
-
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the scissors.
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self.scissors.cartesian_workspace["high"] - self.scissors.cartesian_workspace["low"])
@@ -264,25 +256,7 @@ class PrecisionCuttingEnv(SofaEnv):
         # After initialization of the MechanicalObjects from the topologies, write the positions to the cloth's buffer.
         self.cloth.update_topology_buffer()
 
-        # Identify the indices of cloth points that should be used for describing the state of the scene.
-        # Cloth points laying off the cutting path.
-        points_off_cutting_path = self.cloth.get_points_off_cutting_path()
-        if len(points_off_cutting_path) < self.num_tracking_points_off_cutting_path:
-            raise ValueError(f"Cannot track {self.num_tracking_points_off_cutting_path} points off the cutting path. Only {len(points_off_cutting_path)} points are available.")
-        self.tracking_point_indices_off_cutting_path = farthest_point_sampling(
-            points=points_off_cutting_path,
-            num_samples=self.num_tracking_points_off_cutting_path,
-        )
-        # Cloth points laying on the centerline of the cutting path.
-        points_on_cutting_path = self.cloth.get_points_on_cutting_path_centerline()
-        if len(points_on_cutting_path) < self.num_tracking_points_on_cutting_path:
-            raise ValueError(f"Cannot track {self.num_tracking_points_on_cutting_path} points on the cutting path. Only {len(points_on_cutting_path)} points are available.")
-        self.tracking_point_indices_on_cutting_path = farthest_point_sampling(
-            points=points_on_cutting_path,
-            num_samples=self.num_tracking_points_on_cutting_path,
-        )
-
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
@@ -291,10 +265,10 @@ class PrecisionCuttingEnv(SofaEnv):
         reward = self._get_reward()
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_continuous_action(self, action: np.ndarray) -> np.ndarray:
         """
@@ -344,7 +318,7 @@ class PrecisionCuttingEnv(SofaEnv):
             - cut_off_path (int): Number of triangles off the path that were cut since the last step.
             - cut_ratio (float): Ratio of cut centerline path.
             - delta_cut_ratio (float): Change in ratio of cut centerline path.
-            - worspace_violation (float): 1.0 if the scissors' action would have violated the workspace, 0.0 otherwise.
+            - workspace_violation (float): 1.0 if the scissors' action would have violated the workspace, 0.0 otherwise.
             - state_limits_violation (float): 1.0 if the scissors' action would have violated the state limits, 0.0 otherwise.
             - jaw_angle_violation (float): 1.0 if the scissors' action would have violated the jaw angle limits, 0.0 otherwise.
             - rcm_violation_xyz (float): Cartesian difference between desired and actual scissors position.
@@ -410,7 +384,7 @@ class PrecisionCuttingEnv(SofaEnv):
             )
 
         # State and workspace limits
-        reward_features["worspace_violation"] = float(self.scissors.last_set_state_violated_workspace_limits)
+        reward_features["workspace_violation"] = float(self.scissors.last_set_state_violated_workspace_limits)
         reward_features["state_limits_violation"] = float(self.scissors.last_set_state_violated_state_limits)
         reward_features["jaw_angle_violation"] = float(self.scissors.last_set_angle_violated_jaw_limits)
         rcm_difference = self.scissors.get_pose_difference(position_norm=True)
@@ -513,10 +487,33 @@ class PrecisionCuttingEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
 
-        super().reset()
+        # Seed the instrument
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(1)
+            self.scissors.seed(seed=seeds[0])
+            # Identify the indices of cloth points that should be used for describing the state of the scene.
+            # Cloth points laying off the cutting path.
+            points_off_cutting_path = self.cloth.get_points_off_cutting_path()
+            if len(points_off_cutting_path) < self.num_tracking_points_off_cutting_path:
+                raise ValueError(f"Cannot track {self.num_tracking_points_off_cutting_path} points off the cutting path. Only {len(points_off_cutting_path)} points are available.")
+            self.tracking_point_indices_off_cutting_path = farthest_point_sampling(
+                points=points_off_cutting_path,
+                num_samples=self.num_tracking_points_off_cutting_path,
+                rng=self.rng,
+            )
+            # Cloth points laying on the centerline of the cutting path.
+            points_on_cutting_path = self.cloth.get_points_on_cutting_path_centerline()
+            if len(points_on_cutting_path) < self.num_tracking_points_on_cutting_path:
+                raise ValueError(f"Cannot track {self.num_tracking_points_on_cutting_path} points on the cutting path. Only {len(points_on_cutting_path)} points are available.")
+            self.tracking_point_indices_on_cutting_path = farthest_point_sampling(
+                points=points_on_cutting_path,
+                num_samples=self.num_tracking_points_on_cutting_path,
+                rng=self.rng,
+            )
+            self.unconsumed_seed = False
 
         # Reset the scissors
         self.scissors.reset_state()
@@ -570,7 +567,7 @@ class PrecisionCuttingEnv(SofaEnv):
 
         self.reward_features["cut_ratio"] = 0.0
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -626,7 +623,8 @@ if __name__ == "__main__":
     while not done:
         for _ in range(100):
             start = time.perf_counter()
-            obs, reward, done, info = env.step(env.action_space.sample())
+            obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+            done = terminated or truncated
             if done or counter == episode_length:
                 env.reset()
                 counter = 0

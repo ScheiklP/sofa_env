@@ -163,13 +163,13 @@ def createScene(
                 x, y, _ = np.unravel_index(index, grid_shape, "F")
                 coordinates[:] = [x / grid_shape[0], y / grid_shape[1]]
 
-    def sample_positions() -> List[np.ndarray]:
+    def sample_positions(rng: np.random.Generator) -> List[np.ndarray]:
         num_valid_posts = 0
         positions: List[np.ndarray] = []
         while num_valid_posts < num_objects:
-            height = np.random.uniform(*post_height_limits)
-            x = np.random.uniform(low=-width / 2 + 5, high=width / 2 - 5)
-            y = np.random.uniform(low=-depth / 2 + 5, high=depth / 2 - 5)
+            height = rng.uniform(*post_height_limits)
+            x = rng.uniform(low=-width / 2 + 5, high=width / 2 - 5)
+            y = rng.uniform(low=-depth / 2 + 5, high=depth / 2 - 5)
 
             distances_to_other_posts_too_small = []
             for position in zip(positions):
@@ -180,7 +180,8 @@ def createScene(
                 num_valid_posts += 1
         return positions
 
-    positions = sample_positions()
+    rng = np.random.default_rng()
+    positions = sample_positions(rng)
     posts = []
     for position in positions:
         stiffness = np.random.uniform(*stiffness_limits)

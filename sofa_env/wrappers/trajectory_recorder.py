@@ -1,5 +1,4 @@
-import gym
-import gym.spaces
+import gymnasium as gym
 import numpy as np
 from copy import deepcopy
 from collections import defaultdict
@@ -25,7 +24,7 @@ class TrajectoryRecorder(gym.Wrapper):
     Notes:
         Each trajectory is stored as a new subdirectory in the log directory.
         The naming is derived from the environment's name, and the highest existing index.
-        e.g. if the log directory contains ``ExampleEnv_0``, ``ExampleEnv_1``, and ``ExampleEnv_2``,
+        e.g. if the log directory contains ``ExampleEnv_0`` and ``ExampleEnv_2``,
         the next trajectory will be stored in ``ExampleEnv_3``.
     """
 
@@ -57,17 +56,17 @@ class TrajectoryRecorder(gym.Wrapper):
             self.log_dir.mkdir(parents=True)
 
     def step(self, action):
-
         # Run all callbacks that should be executed before the step
         for callback in self.before_step_callbacks:
             callback(self)
 
-        observation, reward, done, info = self.env.step(action)
+        observation, reward, terminated, truncated, info = self.env.step(action)
 
-        # Store action, reward, done, and optionally info of T=t
+        # Store action, reward, terminated, truncated, and optionally info of T=t
         self.trajectory["action"].append(deepcopy(action))
         self.trajectory["reward"].append(deepcopy(reward))
-        self.trajectory["done"].append(deepcopy(done))
+        self.trajectory["terminated"].append(deepcopy(terminated))
+        self.trajectory["truncated"].append(deepcopy(truncated))
         if self.store_info:
             self.trajectory["info"].append(deepcopy(info))
 
@@ -76,24 +75,24 @@ class TrajectoryRecorder(gym.Wrapper):
             callback(self)
 
         # Store observation of T=t+1
-        if done:
+        if terminated or truncated:
             self.trajectory["terminal_observation"].append(deepcopy(observation))
             self.write_trajectory_to_disk()
         else:
             self.trajectory["observation"].append(deepcopy(observation))
 
-        return (observation, reward, done, info)
+        return (observation, reward, terminated, truncated, info)
 
     def reset(self, **kwargs):
         self.trajectory = defaultdict(list)
         for callback in self.before_reset_callbacks:
             callback(self)
-        observation = self.env.reset(**kwargs)
+        observation, reset_info = self.env.reset(**kwargs)
         # Observation of T=0
         self.trajectory["observation"].append(deepcopy(observation))
         for callback in self.after_reset_callbacks:
             callback(self)
-        return observation
+        return observation, reset_info
 
     def write_trajectory_to_disk(self):
         # Generate the base name of the trajectory based on the environment name
@@ -118,7 +117,7 @@ class TrajectoryRecorder(gym.Wrapper):
 
         # Remove the arrays that should be compressed from the trajectory dictionary
         for key in self.save_compressed_keys:
-            # Pop from trajectory dictorary
+            # Pop from trajectory dictionary
             data = self.trajectory.pop(key)
             file_name = trajectory_dir / f"{key}.npz"
             if file_name.is_file():
@@ -132,3 +131,6 @@ class TrajectoryRecorder(gym.Wrapper):
         if self.metadata is not None:
             with open(trajectory_dir / "metadata.json", "w") as outfile:
                 json.dump(self.metadata, outfile)
+
+        # Clear the trajectory dictionary
+        self.trajectory = defaultdict(list)

@@ -1,6 +1,6 @@
 import time
-import gym
-import gym.spaces
+import gymnasium as gym
+import gymnasium.spaces as spaces
 import numpy as np
 from typing import Any, Callable, List, Union, Dict, Tuple
 from abc import ABC, abstractmethod
@@ -172,7 +172,7 @@ class RRTMotionPlanningWrapper(gym.Wrapper):
             >>> return sofa_objects
 
     Args:
-        env (gym.Env): The environment to wrap.
+        env (gymnasium.Env): The environment to wrap.
         config (dict): Configuration dict for the motion planning wrapper with the following keys:
             instruments: List of instrument names.
             render_color: Dict of RGB colors for the instruments. Contains a numpy array of shape (2, 3) for each instrument name.
@@ -185,12 +185,12 @@ class RRTMotionPlanningWrapper(gym.Wrapper):
         # Parse instruments
         colors = config.get("render_color", {})
         self.render_colors = {name: colors.get(name, np.random.rand(3)) for name in config["instruments"]}
-        if isinstance(env.action_space, gym.spaces.Dict):
+        if isinstance(env.action_space, spaces.Dict):
             self.sample_action = env.action_space.sample()
             for key in self.sample_action:
                 self.sample_action[key][:] = 0.0
             self.instrument_handler: Callable[[dict[str, PivotizedRigidObject]], Any] = lambda x: x
-        elif isinstance(env.action_space, gym.spaces.Box) and len(config["instruments"]) == 1:
+        elif isinstance(env.action_space, spaces.Box) and len(config["instruments"]) == 1:
             if len(env.action_space.sample()) < 4:
                 raise RuntimeError("Action space must be at least 4-dimensional")
             self.instrument_handler: Callable[[dict[str, PivotizedRigidObject]], Any] = lambda x: list(x.values())[0]
@@ -205,7 +205,6 @@ class RRTMotionPlanningWrapper(gym.Wrapper):
         self.nodes = {}
 
     def reset(self, **kwargs) -> Union[np.ndarray, dict]:
-
         reset_observation = self.env.reset(**kwargs)
         self.instruments = self.env.scene_creation_result["motion_planning"]["instruments"]
 
@@ -336,12 +335,8 @@ class RRTMotionPlanningWrapper(gym.Wrapper):
         self.rrt_graphs[instrument_name] = self.mode.create_rrt_graph(self.instruments[instrument_name], offset=self.instruments_offsets.get(instrument_name, np.zeros(3)))
 
         other_instruments = [value for key, value in self.instruments.items() if key != instrument_name]
-        instrument_sphere_positions = np.concatenate(
-            [instrument.collision_model_node[0].MechanicalObject.position.array() for instrument in other_instruments] + [instrument.collision_model_node[1].MechanicalObject.position.array() for instrument in other_instruments]
-        )
-        instrument_sphere_radii = np.concatenate(
-            [instrument.collision_model_node[0].SphereCollisionModel.listRadius.array() for instrument in other_instruments] + [instrument.collision_model_node[1].SphereCollisionModel.listRadius.array() for instrument in other_instruments]
-        )
+        instrument_sphere_positions = np.concatenate([instrument.collision_model_node[0].MechanicalObject.position.array() for instrument in other_instruments] + [instrument.collision_model_node[1].MechanicalObject.position.array() for instrument in other_instruments])
+        instrument_sphere_radii = np.concatenate([instrument.collision_model_node[0].SphereCollisionModel.listRadius.array() for instrument in other_instruments] + [instrument.collision_model_node[1].SphereCollisionModel.listRadius.array() for instrument in other_instruments])
         sphere_centers = np.concatenate((self.sphere_centers, instrument_sphere_positions))
         sphere_radii = np.concatenate((self.sphere_radii, instrument_sphere_radii))
         print(f"Started motion planning for instrument '{instrument_name}'")
@@ -458,7 +453,6 @@ if __name__ == "__main__":
     )
 
     reset_obs = env.reset()
-    done = False
 
     spheres_centers = env.sphere_centers
     spheres_radii = env.sphere_radii

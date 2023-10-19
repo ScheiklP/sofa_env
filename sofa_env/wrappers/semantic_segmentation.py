@@ -1,8 +1,10 @@
-import gym
-import gym.spaces
+from enum import Enum
+import gymnasium as gym
+import gymnasium.spaces as spaces
 import numpy as np
-from typing import List, Optional, Type
 import open3d as o3d
+import importlib.machinery
+from typing import List, Optional, Type
 
 from sofa_env.utils.camera import vertical_to_horizontal_fov, determine_look_at, vertical_to_horizontal_fov
 from sofa_env.utils.math_helper import rotated_y_axis
@@ -19,22 +21,26 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
 
     Notes:
         The createScene function of the SofaEnv should return a dict with all objects that should
-        be included in the semantically segmented image. To correctly create the semantic segmentation, we need points, triangles, and a color per object.
+        be included in the semantically segmented image. To correctly create the semantic segmentation, we need points and triangles.
 
         ``position_containers`` are objects where ``object.position.array()`` is valid (e.g. ``MechanicalObject``).
         ``triangle_containers`` are objects where ``object.triangles.array()`` is valid (e.g. ``OglModel``).
+
+        We can also set the object type for each object to merge them into semantic groups.
 
         Example:
             >>> sofa_objects["semantic_segmentation_objects"] = {}
             >>> sofa_objects["semantic_segmentation_objects"]["position_containers"] = []
             >>> sofa_objects["semantic_segmentation_objects"]["triangle_containers"] = []
+            (>>> sofa_objects["semantic_segmentation_objects"]["object_types"] = [])
             >>> for obj in objects:
                   sofa_objects["semantic_segmentation_objects"]["position_containers"].append(objects[obj].visual_model_node.OglModel)
                   sofa_objects["semantic_segmentation_objects"]["triangle_containers"].append(objects[obj].visual_model_node.OglModel)
+                  (sofa_objects["semantic_segmentation_objects"]["object_types"].append(ObjectType.GRIPPER))
             >>> return sofa_objects
 
     Args:
-        env (gym.Env): The environment to wrap.
+        env (gymnasium.Env): The environment to wrap.
         camera_configs (Optional[List]): List of Dicts ``[{"pose": [x, y, z, a, b, c, w], "hfov": float, "width": int, "height": int}]`` including camera parameters for creating semantic segmentation images. Will use the scene's camera if ``None``.
 
     """
@@ -47,6 +53,15 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.camera_configs = camera_configs
 
+        self._scene_description_module = importlib.machinery.SourceFileLoader("scene_description", str(env._scene_path)).load_module()
+        if not hasattr(self._scene_description_module, "NUM_OBJECT_TYPES"):
+            raise AttributeError(f"Could not find NUM_OBJECT_TYPES in {env._scene_path}. Please add this variable to the file and set it to the number of object types in the scene.")
+        else:
+            num_object_types = self._scene_description_module.NUM_OBJECT_TYPES
+
+        # Add one channel for background
+        num_object_types += 1
+
         if camera_configs is None:
             if not hasattr(env, "create_scene_kwargs"):
                 raise ValueError("No camera_configs specified and could not find create_scene_kwargs in env.")
@@ -54,18 +69,46 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
             if "image_shape" not in env.create_scene_kwargs:
                 raise ValueError("No camera_configs specified and could not find image_shape in create_scene_kwargs.")
 
-            self._observation_space = gym.spaces.Box(low=0, high=np.inf, shape=(env.create_scene_kwargs["image_shape"][0], env.create_scene_kwargs["image_shape"][1], 1), dtype=np.uint16)
+            self.observation_space = spaces.Box(
+                low=0,
+                high=1,
+                shape=(env.create_scene_kwargs["image_shape"][0], env.create_scene_kwargs["image_shape"][1], num_object_types),
+                dtype=np.uint8,
+            )
         else:
-            self._observation_space = gym.spaces.Box(low=0, high=np.inf, shape=(camera_configs[0]["height"], camera_configs[0]["width"], len(camera_configs)), dtype=np.uint16)
+            self.observation_space = spaces.Box(
+                low=0,
+                high=1,
+                shape=(camera_configs[0]["height"], camera_configs[0]["width"], num_object_types),
+                dtype=np.uint8,
+            )
 
     def reset(self, **kwargs):
         """Reads the data for the point clouds from the sofa_env after it is resetted."""
 
         # First reset calls _init_sim to setup the scene
-        observation = self.env.reset(**kwargs)
+        observation, reset_info = self.env.reset(**kwargs)
 
         self.position_containers = self.env.scene_creation_result["semantic_segmentation_objects"]["position_containers"]
         self.triangle_containers = self.env.scene_creation_result["semantic_segmentation_objects"]["triangle_containers"]
+
+        if "object_types" in self.env.scene_creation_result["semantic_segmentation_objects"]:
+            object_types = self.env.scene_creation_result["semantic_segmentation_objects"]["object_types"]
+            valid = True
+            if not all(isinstance(obj_type, Enum) for obj_type in object_types):
+                valid = False
+            elif not all(isinstance(obj_type.value, int) for obj_type in object_types):
+                valid = False
+            if not valid:
+                raise ValueError("object_types must be a list of Enums with integer values.")
+            object_types = [obj_type.value for obj_type in object_types]
+        else:
+            object_types = list(range(len(self.position_containers)))
+
+        self.background_id = 4294967295
+        # Add a final background class
+        object_types.append(len(set(object_types)))
+        self.object_types = np.array(object_types)
 
         if self.camera_configs is None:
             if not isinstance(self.env.scene_creation_result, dict) and "camera" in self.env.scene_creation_result and isinstance(self.env.scene_creation_result["camera"], (self.env.sofa_core.Object, self.env.camera_templates.Camera)):
@@ -94,7 +137,7 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
                 if not camera["width"] == target_width or not camera["height"] == target_height:
                     raise ValueError("All cameras need to have the same width and height to return an array of semantically segmented images.")
 
-        return self.observation(observation)
+        return self.observation(observation), reset_info
 
     def create_open3d_scene_from_containers(self) -> Type[o3d.t.geometry.PointCloud]:
         """Returns a Open3D raycasting scene from the given position and triangle containers."""
@@ -161,4 +204,19 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
             seg = ans["geometry_ids"].numpy()
             segmentation_frames.append(seg[:, :, None])
 
-        return np.concatenate(segmentation_frames, axis=-1)
+        segmentation_frames = np.concatenate(segmentation_frames, axis=-1)
+
+        # Clip the background id
+        segmentation_frames[segmentation_frames == self.background_id] = len(self.object_types) - 1
+
+        # Merge all object ids that belong to the same type
+        segmentation_frames = self.object_types[segmentation_frames]
+
+        H, W, C = self.observation_space.shape
+        masks = np.zeros((H, W, C), dtype=self.observation_space.dtype)
+
+        # Split the segmentation_frames into one_hot encoded masks
+        masks[np.arange(H)[:, np.newaxis], np.arange(W)[np.newaxis, :], segmentation_frames.squeeze()] = 1.0
+
+        # Remove the background class
+        return masks[..., :-1]

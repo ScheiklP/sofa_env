@@ -1,6 +1,6 @@
 import Sofa
 import Sofa.Core
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 import pytest
 
@@ -67,8 +67,8 @@ class TransformationEnv(SofaEnv):
             create_scene_kwargs=create_scene_kwargs,
         )
 
-        self.action_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=self.create_scene_kwargs["image_shape"] + (3,), dtype=np.uint8)
+        self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=255, shape=self.create_scene_kwargs["image_shape"] + (3,), dtype=np.uint8)
 
     def _do_action(self, action: np.ndarray) -> None:
         pass

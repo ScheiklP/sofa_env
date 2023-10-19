@@ -15,7 +15,7 @@ Reward Features
 - distance_to_target: Distance between end effector and target in meters.
 - delta_distance_to_target: Change in distance between end effector and target in meters since the last step.
 - time_step_cost: 1.0 for every step.
-- worspace_violation: 1.0 if the action would have violated the workspace.
+- workspace_violation: 1.0 if the action would have violated the workspace.
 - successful_task: 1.0 if the distance between the end effector and the target is below the threshold ``distance_to_target_threshold``.
 
 Environment
@@ -244,7 +244,7 @@ Reward Features
 - delta_distance_cauter_active_rope: Change in distance between the cauter and the active rope.
 - cut_active_rope: Sum of topological changes of the active rope.
 - cut_inactive_rope: Sum of topological changes of the inactive ropes.
-- worspace_violation: 1.0 if the cauter action would have violated the workspace, 0.0 otherwise.
+- workspace_violation: 1.0 if the cauter action would have violated the workspace, 0.0 otherwise.
 - state_limits_violation: 1.0 if the cauter action would have violated the state limits, 0.0 otherwise.
 
 Environment

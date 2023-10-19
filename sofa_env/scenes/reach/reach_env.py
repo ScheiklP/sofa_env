@@ -1,6 +1,5 @@
 import cv2
-import gym
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from collections import deque, defaultdict
@@ -8,7 +7,7 @@ from enum import Enum, unique
 from pathlib import Path
 from functools import reduce
 
-from typing import Union, Tuple, Optional, Any, List, Callable
+from typing import Union, Tuple, Optional, Any, List, Callable, Dict
 
 from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.reach.sofa_objects.end_effector import EndEffector
@@ -53,6 +52,7 @@ class ReachEnv(SofaEnv):
         render_framework (RenderFramework): choose between pyglet and pygame for rendering
         reward_amount_dict (dict): Dictionary to weigh the components of the reward function.
         create_scene_kwargs (Optional[dict]): A dictionary to pass additional keyword arguments to the ``createScene`` function.
+        render_mode (RenderMode): Create a window (``RenderMode.HUMAN``), run headless (``RenderMode.HEADLESS``), or do not create a render buffer at all (``RenderMode.NONE``).
         on_reset_callbacks (Optional[List[Callable]]): A list of callables to call after the environment is reset.
         sphere_radius (float): Radius of the target sphere in meters.
     """
@@ -76,7 +76,7 @@ class ReachEnv(SofaEnv):
             "distance_to_target": -0.0,
             "delta_distance_to_target": -0.0,
             "time_step_cost": -0.0,
-            "worspace_violation": -0.0,
+            "workspace_violation": -0.0,
             "successful_task": 0.0,
         },
         create_scene_kwargs: Optional[dict] = None,
@@ -106,10 +106,10 @@ class ReachEnv(SofaEnv):
         action_dimensionality = 3
         self.action_type = action_type
         if action_type == ActionType.CONTINUOUS:
-            self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality,), dtype=np.float32)
             self._scale_action = self._scale_continuous_action
         else:
-            self.action_space = gym.spaces.Discrete(action_dimensionality * 2 + 1)
+            self.action_space = spaces.Discrete(action_dimensionality * 2 + 1)
             self._scale_action = self._scale_discrete_action
 
             if isinstance(discrete_action_magnitude, np.ndarray):
@@ -143,41 +143,41 @@ class ReachEnv(SofaEnv):
             dim_states = 3
             if observe_target_position:
                 dim_states += 3
-            self.observation_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(dim_states,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(dim_states,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
             if observe_target_position:
-                self.observation_space = gym.spaces.Dict(
+                self.observation_space = spaces.Dict(
                     {
-                        "rgb": gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8),
-                        "target_position": gym.spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32),
+                        "rgb": spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8),
+                        "target_position": spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32),
                     }
                 )
             else:
-                self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+                self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         elif observation_type == ObservationType.RGBD:
             if observe_target_position:
-                self.observation_space = gym.spaces.Dict(
+                self.observation_space = spaces.Dict(
                     {
-                        "rgbd": gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8),
-                        "target_position": gym.spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32),
+                        "rgbd": spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8),
+                        "target_position": spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32),
                     }
                 )
             else:
-                self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+                self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         elif observation_type == ObservationType.DEPTH:
             if observe_target_position:
-                self.observation_space = gym.spaces.Dict(
+                self.observation_space = spaces.Dict(
                     {
-                        "depth": gym.spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8),
-                        "target_position": gym.spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32),
+                        "depth": spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8),
+                        "target_position": spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32),
                     }
                 )
             else:
-                self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
+                self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (1,), dtype=np.uint8)
 
         else:
             raise Exception(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -218,24 +218,20 @@ class ReachEnv(SofaEnv):
         self.end_effector: EndEffector = self.scene_creation_result["interactive_objects"]["end_effector"]
         self._visual_target: ControllableRigidObject = self.scene_creation_result["interactive_objects"]["visual_target"]
 
-        # Seed the end effector's random number generator with the seed sequence from the env
-        seeds = self.seed_sequence.spawn(1)
-        self.end_effector.seed(seed=seeds[0])
-
         # Scale the all distance values to an interval of [0, 1] based on the end effector workspace
         self._distance_normalization_factor = 1.0 / np.linalg.norm(self._workspace["high"][:3] - self._workspace["low"][:3])
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
 
         observation = self._get_observation(maybe_rgb_observation=maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _scale_discrete_action(self, action: int) -> np.ndarray:
         """Maps action indices to a motion delta."""
@@ -273,7 +269,7 @@ class ReachEnv(SofaEnv):
             - distance_to_target (float): Distance between end effector and target in meters.
             - delta_distance_to_target (float): Change in distance between end effector and target in meters since the last step.
             - time_step_cost (float): 1.0 for every step.
-            - worspace_violation (float): 1.0 if the action would have violated the workspace.
+            - workspace_violation (float): 1.0 if the action would have violated the workspace.
             - successful_task (float): 1.0 if the distance between the end effector and the target is below the threshold ``distance_to_target_threshold``.
         """
 
@@ -286,7 +282,7 @@ class ReachEnv(SofaEnv):
 
         reward_features["time_step_cost"] = 1.0
 
-        reward_features["worspace_violation"] = float(self._last_action_violated_workspace)
+        reward_features["workspace_violation"] = float(self._last_action_violated_workspace)
 
         reward_features["successful_task"] = float(reward_features["distance_to_target"] <= self._distance_to_target_threshold)
 
@@ -374,9 +370,15 @@ class ReachEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info, **self.reward_features}
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
-        super().reset()
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
+
+        # Seed the instrument
+        if self.unconsumed_seed:
+            # Seed the end effector's random number generator with the seed sequence from the env
+            seeds = self.seed_sequence.spawn(1)
+            self.end_effector.seed(seed=seeds[0])
+            self.unconsumed_seed = False
 
         # Reset end_effector
         self.end_effector.reset()
@@ -405,7 +407,7 @@ class ReachEnv(SofaEnv):
         for callback in self.on_reset_callbacks:
             callback(self)
 
-        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -426,7 +428,7 @@ if __name__ == "__main__":
             "distance_to_target": -1.0,
             "delta_distance_to_target": -1.0,
             "time_step_cost": -1.0,
-            "worspace_violation": -1.0,
+            "workspace_violation": -1.0,
             "successful_task": 1.0,
         },
     )
@@ -439,7 +441,7 @@ if __name__ == "__main__":
     counter = 0
     while not done:
         start = time.time()
-        obs, reward, done, info = env.step(env.action_space.sample())
+        obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
         if env._observation_type == ObservationType.DEPTH:
             cv2.imshow("Depth Image", obs)
             cv2.waitKey(1)

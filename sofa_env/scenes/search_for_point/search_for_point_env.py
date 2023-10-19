@@ -1,4 +1,4 @@
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 
 from sofa_env.scenes.search_for_point.sofa_objects.point_of_interest import PointOfInterest
@@ -248,19 +248,19 @@ class SearchForPointEnv(SofaEnv):
 
                 if self.individual_agents:
                     self._do_action = self._do_action_active_vision_dict
-                    self.action_space = gym.spaces.Dict(
+                    self.action_space = spaces.Dict(
                         {
-                            "camera": gym.spaces.Box(low=-1.0, high=1.0, shape=(camera_action_dimensionality,), dtype=np.float32),
-                            "cauter": gym.spaces.Box(low=-1.0, high=1.0, shape=(cauter_action_dimensionality,), dtype=np.float32),
+                            "camera": spaces.Box(low=-1.0, high=1.0, shape=(camera_action_dimensionality,), dtype=np.float32),
+                            "cauter": spaces.Box(low=-1.0, high=1.0, shape=(cauter_action_dimensionality,), dtype=np.float32),
                         }
                     )
                 else:
                     self._do_action = self._do_continuous_action_active_vision_array
-                    self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(camera_action_dimensionality + cauter_action_dimensionality,), dtype=np.float32)
+                    self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(camera_action_dimensionality + cauter_action_dimensionality,), dtype=np.float32)
             # No active vision -> Only the camera is controlled
             else:
                 self._do_action = self._do_action_camera
-                self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(camera_action_dimensionality,), dtype=np.float32)
+                self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(camera_action_dimensionality,), dtype=np.float32)
         # Discrete action
         else:
             # Discrete action magnitude
@@ -300,16 +300,16 @@ class SearchForPointEnv(SofaEnv):
 
             if self.active_vision:
                 if self.individual_agents:
-                    self.action_space = gym.spaces.Dict(
+                    self.action_space = spaces.Dict(
                         {
-                            "camera": gym.spaces.Discrete(camera_action_dimensionality * 2 + 1),
-                            "cauter": gym.spaces.Discrete(cauter_action_dimensionality * 2 + 1),
+                            "camera": spaces.Discrete(camera_action_dimensionality * 2 + 1),
+                            "cauter": spaces.Discrete(cauter_action_dimensionality * 2 + 1),
                         }
                     )
                     self._do_action = self._do_action_active_vision_dict
                 else:
                     # +/- for camera, +/- for cauter, noop
-                    self.action_space = gym.spaces.Discrete(camera_action_dimensionality * 2 + cauter_action_dimensionality * 2 + 1)
+                    self.action_space = spaces.Discrete(camera_action_dimensionality * 2 + cauter_action_dimensionality * 2 + 1)
                     self._do_action = self._do_discret_action_active_vision_array
 
                 self._scale_cauter_action = self._scale_discrete_cauter_action
@@ -317,7 +317,7 @@ class SearchForPointEnv(SofaEnv):
                 self._discrete_cauter_action_lookup.flags.writeable = False
 
             else:
-                self.action_space = gym.spaces.Discrete(camera_action_dimensionality * 2 + 1)
+                self.action_space = spaces.Discrete(camera_action_dimensionality * 2 + 1)
                 self._do_action = self._do_action_camera
 
         if self.active_vision_mode not in (ActiveVision.CAUTER, ActiveVision.DEACTIVATED):
@@ -339,15 +339,15 @@ class SearchForPointEnv(SofaEnv):
                 # Ptsda of active vision instrument -> 5
                 observations_size += 7 + 5
 
-            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
         elif observation_type == ObservationType.RGB:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         # RGB + Depth observations
         elif observation_type == ObservationType.RGBD:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
             raise ValueError(f"Please set observation_type to a value of ObservationType. Received {observation_type}.")
@@ -384,16 +384,6 @@ class SearchForPointEnv(SofaEnv):
         self.contact_listener: Dict[str, Sofa.Core.ContactListener] = self.scene_creation_result["contact_listener"]
         if self.check_collision and "cauter" not in self.contact_listener:
             raise KeyError("Cauter contact listener not found in contact_listener dict, but collision checking is enabled.")
-
-        seeds = self.seed_sequence.spawn(5)
-        self.camera.seed(seed=seeds[0])
-        if self.assistant_gripper is not None:
-            self.assistant_gripper.seed(seed=seeds[1])
-        if self.surgeon_gripper is not None:
-            self.surgeon_gripper.seed(seed=seeds[2])
-        if self.cauter is not None:
-            self.cauter.seed(seed=seeds[3])
-        self.poi.seed(seed=seeds[4])
 
     def create_discrete_action_lookup(self, dimensionality, discrete_action_magnitude):
         """Returns a list of discrete actions.
@@ -484,16 +474,16 @@ class SearchForPointEnv(SofaEnv):
         """Apply the ``camera`` action to the simulation."""
         self.camera.set_state(self.camera.get_state() + self._scale_camera_action(action))
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
+        maybe_rgb_observation = super().step(action)
 
-        rgb_observation = super().step(action)
-        observation = self._get_observation(rgb_observation=rgb_observation)
+        observation = self._get_observation(maybe_rgb_observation)
         reward = self._get_reward()
-        done = self._get_done()
+        terminated = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, terminated, False, info
 
     def _get_reward_features(self, previous_reward_features: dict) -> dict:
         """Get the features that may be used to assemble the reward function
@@ -631,10 +621,21 @@ class SearchForPointEnv(SofaEnv):
                 return True
         return False
 
-    def reset(self) -> Union[np.ndarray, dict]:
-        """Reset the state of the environment and return the initial observation."""
-        # Reset from parent class -> calls the simulation's reset function
-        super().reset()
+    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+        super().reset(seed)
+
+        # Seed the instruments
+        if self.unconsumed_seed:
+            seeds = self.seed_sequence.spawn(5)
+            self.camera.seed(seed=seeds[0])
+            if self.assistant_gripper is not None:
+                self.assistant_gripper.seed(seed=seeds[1])
+            if self.surgeon_gripper is not None:
+                self.surgeon_gripper.seed(seed=seeds[2])
+            if self.cauter is not None:
+                self.cauter.seed(seed=seeds[3])
+            self.poi.seed(seed=seeds[4])
+            self.unconsumed_seed = False
 
         # Reset the instruments
         if self.assistant_gripper is not None:
@@ -677,7 +678,7 @@ class SearchForPointEnv(SofaEnv):
         for callback in self.on_reset_callbacks:
             callback(self)
 
-        return self._get_observation(rgb_observation=self._maybe_update_rgb_buffer())
+        return self._get_observation(rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
 if __name__ == "__main__":
@@ -708,7 +709,8 @@ if __name__ == "__main__":
         for _ in range(500):
             start = time.perf_counter()
             action = env.action_space.sample()
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             if counter % 300 == 0:
                 env.reset()
                 counter = 0

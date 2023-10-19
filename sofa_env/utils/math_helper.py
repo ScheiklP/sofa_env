@@ -86,10 +86,19 @@ def quaternion_from_vectors(reference: np.ndarray, target: np.ndarray) -> np.nda
     Returns:
         quaternion (np.ndarray): Quaternion that rotates the reference vector into the target vector.
     """
-    axis = np.cross(reference, target)
-    axis /= np.linalg.norm(axis)
-    angle = np.arccos(np.dot(reference, target) / (np.linalg.norm(reference) * np.linalg.norm(target)))
-    return np.hstack((axis * np.sin(angle / 2), np.cos(angle / 2)))
+    rotation_matrix = rotation_matrix_from_vectors(reference, target)
+
+    # Get quaternion
+    # See https://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
+    qw = np.sqrt(1 + rotation_matrix[0, 0] + rotation_matrix[1, 1] + rotation_matrix[2, 2]) / 2
+    denominator = 4 * qw
+    qx = (rotation_matrix[2, 1] - rotation_matrix[1, 2]) / denominator
+    qy = (rotation_matrix[0, 2] - rotation_matrix[2, 0]) / denominator
+    qz = (rotation_matrix[1, 0] - rotation_matrix[0, 1]) / denominator
+
+    quaternion = np.array([qx, qy, qz, qw])
+
+    return quaternion
 
 
 def multiply_quaternions(left: np.ndarray, right: np.ndarray) -> np.ndarray:

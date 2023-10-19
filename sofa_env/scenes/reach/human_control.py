@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Tuple
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="Setup human input behavior.")
     parser.add_argument("-rv", "--record_video", action="store_true", help="Record video of the trajectory.")
     parser.add_argument("-rt", "--record_trajectory", action="store_true", help="Record the full trajectory.")
@@ -80,7 +79,7 @@ if __name__ == "__main__":
             after_reset_callbacks=[store_rgb_obs],
         )
 
-    reset_obs = env.reset()
+    reset_obs, reset_info = env.reset()
     if video_writer is not None:
         video_writer.write(env.render()[:, :, ::-1])
     done = False
@@ -94,7 +93,8 @@ if __name__ == "__main__":
         action[0] = rx
         action[1] = -ry
         action[2] = ly
-        obs, reward, done, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
         if video_writer is not None:
             video_writer.write(env.render()[:, :, ::-1])
         if controller.x:

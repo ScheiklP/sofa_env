@@ -1,4 +1,5 @@
 import Sofa
+import Sofa.Core
 import numpy as np
 
 from sofa_env.scenes.magnetic_continuum_robot.mcr_sim import mcr_mag_controller
@@ -35,7 +36,6 @@ class ControllerSofa(Sofa.Core.Controller):
         *args,
         **kwargs,
     ):
-
         # These are needed (and the normal way to override from a python class)
         Sofa.Core.Controller.__init__(self, *args, **kwargs)
 
