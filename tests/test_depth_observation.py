@@ -1,7 +1,7 @@
 import Sofa
 import Sofa.Core
 
-import gym.spaces
+import gymnasium.spaces as spaces
 import numpy as np
 import pytest
 
@@ -71,8 +71,8 @@ class DepthEnv(SofaEnv):
             create_scene_kwargs=create_scene_kwargs,
         )
 
-        self.action_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(600, 600, 3), dtype=np.uint8)
+        self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(600, 600, 3), dtype=np.uint8)
 
     def _do_action(self, action: np.ndarray) -> None:
         pass
