@@ -1,6 +1,8 @@
 name: Publish documentation on Github Pages
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [gh-pages]
 
 # Cancel any in-progress job or run
 # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#concurrency
