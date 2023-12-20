@@ -44,7 +44,6 @@ class Eye:
         collision_group: Optional[int] = None,
         render_index: bool = True,
     ) -> None:
-
         # Placement of the peg
         quaternion = np.array([0, 0, np.sin(rotation * np.pi / 360), np.cos(rotation * np.pi / 360)])
         self.peg_pose = np.zeros(7)
@@ -96,18 +95,24 @@ class Eye:
         # Sphere collision models
         if collision_positions is None:
             collision_positions = [
-                [-3.3, 0.0, 19.0],
-                [6.3, 0.0, 19.0],
-                [1.6, 0.0, 23.5],
-                [5.0, 0.0, 22.0],
-                [-2.0, 0.0, 22.0],
-                [5.0, 0.0, 15.5],
-                [-2.0, 0.0, 15.5],
-                [1.6, 0.0, 13.5],
-                [0.0, 0.0, 10.0],
-                [0.0, 0.0, 6.0],
+                # shaft
                 [0.0, 0.0, 2.0],
+                [0.0, 0.0, 6.0],
+                [0.0, 0.0, 10.0],
+                # arc bottom
+                [1.6, 0.0, 13.5],
+                # left arc
+                [-2.0, 0.0, 15.5],
+                [-3.3, 0.0, 19.0],
+                [-2.0, 0.0, 22.0],
+                # arc top
+                [1.6, 0.0, 23.5],
+                # right arc
+                [5.0, 0.0, 22.0],
+                [6.3, 0.0, 19.0],
+                [5.0, 0.0, 15.5],
             ]
+
         self.collision_node = self.rigid_object.node.addChild("collision")
         self.collision_node.addObject("MechanicalObject", template="Vec3d", position=collision_positions)
         collision_model_kwargs = {}
@@ -160,28 +165,48 @@ class Eye:
     def reset(self) -> None:
         """If the Eye was initialized with position_reset_noise, add some noise to the initial position and rotation of the Eye."""
         if self.position_reset_noise is not None:
-
             xyzphi = np.append(self.initial_position, self.initial_rotation) + self.rng.uniform(
                 self.position_reset_noise["low"],
                 self.position_reset_noise["high"],
             )
 
-            quaternion = np.array([0, 0, np.sin(xyzphi[-1] * np.pi / 360), np.cos(xyzphi[-1] * np.pi / 360)])
+            self.set_xyzphi(xyzphi)
 
-            self.peg_pose[:3] = xyzphi[:3]
-            self.peg_pose[3:] = quaternion
-            self.center_pose[:3] = xyzphi[:3] + point_rotation_by_quaternion(np.array([1.55, 0.0, 18.7]), quaternion)
-            self.center_pose[3:] = quaternion
-            self.position = xyzphi[:3]
-            self.rotation = xyzphi[3]
+    def set_xyzphi(self, xyzphi: np.ndarray) -> None:
+        quaternion = np.array([0, 0, np.sin(xyzphi[-1] * np.pi / 360), np.cos(xyzphi[-1] * np.pi / 360)])
 
-            new_pose = np.append(xyzphi[:3], quaternion)
-            with self.rigid_object.mechanical_object.position.writeable() as pose:
-                pose[:] = new_pose
+        self.peg_pose[:3] = xyzphi[:3]
+        self.peg_pose[3:] = quaternion
+        self.center_pose[:3] = xyzphi[:3] + point_rotation_by_quaternion(np.array([1.55, 0.0, 18.7]), quaternion)
+        self.center_pose[3:] = quaternion
+        self.position = xyzphi[:3]
+        self.rotation = xyzphi[3]
 
-            if self.render_index:
-                with self.text.position.writeable() as position:
-                    position[:] = xyzphi[:3]
+        new_pose = np.append(xyzphi[:3], quaternion)
+        with self.rigid_object.mechanical_object.position.writeable() as pose:
+            pose[:] = new_pose
+
+        if self.render_index:
+            with self.text.position.writeable() as position:
+                position[:] = xyzphi[:3]
+
+    def set_center_xyzphi(self, xyzphi: np.ndarray) -> None:
+        quaternion = np.array([0, 0, np.sin(xyzphi[-1] * np.pi / 360), np.cos(xyzphi[-1] * np.pi / 360)])
+        d = point_rotation_by_quaternion(np.array([1.55, 0.0, 18.7]), quaternion)
+        self.peg_pose[:3] = xyzphi[:3] - d
+        self.peg_pose[3:] = quaternion
+        self.center_pose[:3] = xyzphi[:3] 
+        self.center_pose[3:] = quaternion
+        self.position = xyzphi[:3] - d
+        self.rotation = xyzphi[3]
+
+        new_pose = np.append(xyzphi[:3] - d, quaternion)
+        with self.rigid_object.mechanical_object.position.writeable() as pose:
+            pose[:] = new_pose
+
+        if self.render_index:
+            with self.text.position.writeable() as position:
+                position[:] = xyzphi[:3] - d
 
     def seed(self, seed: Union[int, np.random.SeedSequence]) -> None:
         """Creates a random number generator from a seed."""

@@ -51,6 +51,10 @@ DEFAULT_EYE_CONFIG = [
     (60, 60, 0, 90),
 ]
 
+DEFAULT_CARTESIAN_WORKSPACE_LIMITS = {
+    "low": (-20.0, -20.0, 0.0),
+    "high": (230.0, 180.0, 100.0),
+}
 
 def createScene(
     root_node: Sofa.Core.Node,
@@ -67,6 +71,10 @@ def createScene(
     # another sensible camera pose with broader view
     # [50.0, -75.0, 150.0, 0.3826834, 0.0, 0.0, 0.9238795]
     no_textures: bool = False,
+    only_right_gripper: bool = False,
+    gripper_and_rope_same_collision_group: bool = False,
+    num_rope_points: int = 100,
+    cartesian_workspace_limits: dict[str, tuple[float, float, float]] = DEFAULT_CARTESIAN_WORKSPACE_LIMITS,
 ) -> Dict:
     """
     Creates the scene of the RopeThreadingEnv.
@@ -84,6 +92,10 @@ def createScene(
         animation_loop (AnimationLoopType): Animation loop of the simulation.
         camera_pose (np.ndarray): Pose of the camera.
         no_textures (bool): Whether to not add texture to the visual models.
+        only_right_gripper (bool): Whether to only add the right gripper.
+        gripper_and_rope_same_collision_group (bool): Whether the gripper and rope should be in the same collision group.
+        num_rope_points (int): Number of points to use for the rope.
+        cartesian_workspace_limits (dict[str, tuple[float, float, float]]): The cartesian workspace limits imposed on the grippers.
 
     Returns:
         scene_creation_result = {
@@ -156,7 +168,7 @@ def createScene(
             )
         )
 
-    poses_for_rope = poses_for_linear_rope(length=200, num_points=100, start_position=np.array([70.0, 0.0, 34.0]))
+    poses_for_rope = poses_for_linear_rope(length=200, num_points=num_rope_points, start_position=np.array([70.0, 0.0, 34.0]))
     # Rotate the rope such that y axis of gripper and rope align
     transformation_quaternion = rotation_matrix_to_quaternion(euler_to_rotation_matrix(np.array([180.0, 0.0, 0.0])))
     poses_for_rope = [np.append(pose[:3], multiply_quaternions(transformation_quaternion, pose[3:])) for pose in poses_for_rope]
@@ -178,11 +190,12 @@ def createScene(
         show_object=debug_rendering,
         show_object_scale=3,
         poses=poses_for_rope,
+        collision_group=1,
     )
 
     cartesian_workspace = {
-        "low": np.array([-20.0, -20.0, 0.0]),
-        "high": np.array([230.0, 180.0, 100.0]),
+        "low": np.array(cartesian_workspace_limits["low"]),
+        "high": np.array(cartesian_workspace_limits["high"]),
     }
 
     board_limits = {
@@ -235,48 +248,50 @@ def createScene(
                 x, y, _ = np.unravel_index(index, grid_shape, "F")
                 coordinates[:] = [x / grid_shape[0], y / grid_shape[1]]
 
-    left_gripper = ArticulatedGripper(
-        parent_node=scene_node,
-        name="left_gripper",
-        visual_mesh_path_shaft=INSTRUMENT_MESH_DIR / "instrument_shaft.stl",
-        visual_mesh_paths_jaws=[INSTRUMENT_MESH_DIR / "forceps_jaw_left.stl", INSTRUMENT_MESH_DIR / "forceps_jaw_right.stl"],
-        rope_to_grasp=rope,
-        ptsd_state=np.array([0.0, 0.0, 180.0, 50.0]),
-        rcm_pose=np.array([0.0, 0.0, 100.0, 0.0, 180.0, 0.0]),
-        collision_spheres_config={
-            "positions": [[0, 0, 5 + i * 2] for i in range(10)],
-            "backside": [[0, -1.5, 5 + i * 2] for i in range(10)],
-            "radii": [1] * 10,
-        },
-        jaw_length=25,
-        angle=20.0,
-        angle_limits=(0.0, 60.0),
-        total_mass=1e12,
-        mechanical_binding=MechanicalBinding.SPRING,
-        animation_loop_type=animation_loop,
-        show_object=debug_rendering,
-        show_object_scale=10,
-        show_remote_center_of_motion=debug_rendering,
-        state_limits={
-            "low": np.array([-90.0, -90.0, np.finfo(np.float16).min, 0.0]),
-            "high": np.array([90.0, 90.0, np.finfo(np.float16).max, 100.0]),
-        },
-        spring_stiffness=1e29,
-        angular_spring_stiffness=1e29,
-        articulation_spring_stiffness=1e29,
-        spring_stiffness_grasping=1e9,
-        angular_spring_stiffness_grasping=1e9,
-        angle_to_grasp_threshold=10.0,
-        angle_to_release_threshold=15.0,
-        collision_group=0,
-        collision_contact_stiffness=100,
-        cartesian_workspace=cartesian_workspace,
-        start_grasped=False,
-        grasp_index_pair=(0, 0),
-        ptsd_reset_noise=np.array([10.0, 10.0, 45.0, 10.0]) if randomize_gripper else None,
-        angle_reset_noise=20.0 if randomize_gripper else None,
-        deactivate_collision_while_grasped=True,
-    )
+    left_gripper = None
+    if not only_right_gripper:
+        left_gripper = ArticulatedGripper(
+            parent_node=scene_node,
+            name="left_gripper",
+            visual_mesh_path_shaft=INSTRUMENT_MESH_DIR / "instrument_shaft.stl",
+            visual_mesh_paths_jaws=[INSTRUMENT_MESH_DIR / "forceps_jaw_left.stl", INSTRUMENT_MESH_DIR / "forceps_jaw_right.stl"],
+            rope_to_grasp=rope,
+            ptsd_state=np.array([0.0, 0.0, 180.0, 50.0]),
+            rcm_pose=np.array([0.0, 0.0, 100.0, 0.0, 180.0, 0.0]),
+            collision_spheres_config={
+                "positions": [[0, 0, 5 + i * 2] for i in range(10)],
+                "backside": [[0, -1.5, 5 + i * 2] for i in range(10)],
+                "radii": [1] * 10,
+            },
+            jaw_length=25,
+            angle=20.0,
+            angle_limits=(0.0, 60.0),
+            total_mass=1e12,
+            mechanical_binding=MechanicalBinding.SPRING,
+            animation_loop_type=animation_loop,
+            show_object=debug_rendering,
+            show_object_scale=10,
+            show_remote_center_of_motion=debug_rendering,
+            state_limits={
+                "low": np.array([-90.0, -90.0, np.finfo(np.float16).min, 0.0]),
+                "high": np.array([90.0, 90.0, np.finfo(np.float16).max, 100.0]),
+            },
+            spring_stiffness=1e29,
+            angular_spring_stiffness=1e29,
+            articulation_spring_stiffness=1e29,
+            spring_stiffness_grasping=1e9,
+            angular_spring_stiffness_grasping=1e9,
+            angle_to_grasp_threshold=10.0,
+            angle_to_release_threshold=15.0,
+            collision_group=1 if gripper_and_rope_same_collision_group else 0,
+            collision_contact_stiffness=100,
+            cartesian_workspace=cartesian_workspace,
+            start_grasped=False,
+            grasp_index_pair=(0, 0),
+            ptsd_reset_noise=np.array([10.0, 10.0, 45.0, 10.0]) if randomize_gripper else None,
+            angle_reset_noise=20.0 if randomize_gripper else None,
+            deactivate_collision_while_grasped=False if gripper_and_rope_same_collision_group else True,
+        )
 
     right_gripper = ArticulatedGripper(
         parent_node=scene_node,
@@ -311,7 +326,7 @@ def createScene(
         angular_spring_stiffness_grasping=1e9,
         angle_to_grasp_threshold=10.0,
         angle_to_release_threshold=15.0,
-        collision_group=0,
+        collision_group=1 if gripper_and_rope_same_collision_group else 0,
         collision_contact_stiffness=100,
         cartesian_workspace=cartesian_workspace,
         start_grasped=start_grasped,
@@ -319,20 +334,23 @@ def createScene(
         grasp_index_reset_noise={"low": -5, "high": 15} if randomize_grasp_index else None,
         ptsd_reset_noise=np.array([10.0, 10.0, 45.0, 10.0]) if randomize_gripper else None,
         angle_reset_noise=None,
-        deactivate_collision_while_grasped=True,
+        deactivate_collision_while_grasped=False if gripper_and_rope_same_collision_group else True,
     )
 
     if not positioning_camera:
-        scene_node.addObject(left_gripper)
+        if not only_right_gripper:
+            scene_node.addObject(left_gripper)
         scene_node.addObject(right_gripper)
 
     contact_listeners = {"left_gripper": [], "right_gripper": []}
     contact_listener_info = {"left_gripper": [], "right_gripper": []}
 
     for gripper_name in ("left_gripper", "right_gripper"):
+        instrument = right_gripper if gripper_name == "right_gripper" else left_gripper
+        if instrument is None:
+            continue
         for jaw_name in ("jaw_0", "jaw_1"):
             for eye in eyes:
-                instrument = right_gripper if gripper_name == "right_gripper" else left_gripper
                 collision_model = instrument.sphere_collisions_jaw_0 if jaw_name == "jaw_0" else instrument.sphere_collisions_jaw_1
                 contact_listener = eye.rigid_object.node.addObject(
                     "ContactListener",

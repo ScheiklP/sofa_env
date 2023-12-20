@@ -170,9 +170,11 @@ class RopeThreadingEnv(SofaEnv):
         num_rope_tracking_points: int = -1,
     ) -> None:
         # Pass image shape to the scene creation function
-        if not isinstance(create_scene_kwargs, dict):
+        if create_scene_kwargs is None:
             create_scene_kwargs = {}
         create_scene_kwargs["image_shape"] = image_shape
+        create_scene_kwargs.setdefault("only_right_gripper", only_right_gripper)
+        num_rope_points = create_scene_kwargs.setdefault("num_rope_points", 100)
 
         super().__init__(
             scene_path=scene_path,
@@ -237,16 +239,30 @@ class RopeThreadingEnv(SofaEnv):
                 )
                 self._do_action = self._do_action_dict
             else:
-                self.action_space = spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(10,), dtype=np.float32)
+                self.action_space = spaces.Box(low=np.tile(action_space_limits["low"], 2), high=np.tile(action_space_limits["high"], 2), shape=(10,), dtype=np.float32)
                 self._do_action = self._do_action_array
 
         ###################
         # Observation Space
         ###################
+        # Identify the indices of points on the rope that should be used for describing the state of the rope.
+        # If num_rope_tracking_points is -1, use all of them.
+        match num_rope_tracking_points:
+            case -1:
+                self.num_rope_tracking_points = num_rope_points
+                self.rope_tracking_point_indices = np.array(range(num_rope_points), dtype=np.int16)
+            case 0:
+                self.num_rope_tracking_points = 0
+                self.rope_tracking_point_indices = None
+            case n if 1 <= n <= num_rope_points:
+                self.num_rope_tracking_points = n
+                self.rope_tracking_point_indices = np.linspace(0, num_rope_points - 1, num=self.num_rope_tracking_points, endpoint=True, dtype=np.int16)
+            case n if n > num_rope_points:
+                raise ValueError(f"The number of rope tracking points ({num_rope_tracking_points}) is larger than the number of points on the rope ({num_rope_points}).")
+            case _:
+                raise ValueError(f"num_rope_tracking_points must be > 0 or == -1 (to use them all). Received {num_rope_tracking_points}.")
 
         # State observations
-        self.num_rope_tracking_points = num_rope_tracking_points
-        self.torus_tracking_point_indices: Union[np.ndarray, None]  # set in self._init_sim
         if observation_type == ObservationType.STATE:
             # has_grasped -> 1 if single_agent else 2
             # ptsda_state -> 5 if single_agent else 10
@@ -255,7 +271,7 @@ class RopeThreadingEnv(SofaEnv):
             # rope_tracking_point_positions -> num_rope_tracking_points * 3
             # active eye pose -> 4
             times = 1 if self.single_agent else 2
-            observations_size = (1 + 5 + 7) * times + 3 + num_rope_tracking_points * 3 + 4
+            observations_size = (1 + 5 + 7) * times + 3 + self.num_rope_tracking_points * 3 + 4
             self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observations_size,), dtype=np.float32)
 
         # Image observations
@@ -299,7 +315,7 @@ class RopeThreadingEnv(SofaEnv):
         super()._init_sim()
 
         self.initial_rope_state: np.ndarray = self.scene_creation_result["rope"].get_state()
-        self.left_gripper: ArticulatedGripper = self.scene_creation_result["interactive_objects"]["left_gripper"]
+        self.left_gripper: Optional[ArticulatedGripper] = self.scene_creation_result["interactive_objects"]["left_gripper"]
         self.right_gripper: ArticulatedGripper = self.scene_creation_result["interactive_objects"]["right_gripper"]
         self.eyes: List[Eye] = self.scene_creation_result["eyes"]
         self.rope: TransferRope = self.scene_creation_result["rope"]
@@ -308,19 +324,7 @@ class RopeThreadingEnv(SofaEnv):
 
         # Factor for normalizing the distances in the reward function.
         # Based on the workspace of the grippers.
-        self._distance_normalization_factor = 1.0 / np.linalg.norm(self.left_gripper.cartesian_workspace["high"] - self.left_gripper.cartesian_workspace["low"])
-
-        # Identify the indices of points on the rope that should be used for describing the state of the rope. If num_rope_tracking_points is -1, use all of them.
-        if self.num_rope_tracking_points > 0:
-            if self.rope.num_points < self.num_rope_tracking_points:
-                raise Exception(f"The number of rope tracking points ({self.num_rope_tracking_points}) is larger than the number of points on the rope ({self.rope.num_points}).")
-            self.rope_tracking_point_indices = np.linspace(0, self.rope.num_points - 1, num=self.num_rope_tracking_points, endpoint=True, dtype=np.int16)
-        elif self.num_rope_tracking_points == -1:
-            self.rope_tracking_point_indices = np.array(range(self.rope.num_points), dtype=np.int16)
-        elif self.num_rope_tracking_points == 0:
-            self.rope_tracking_point_indices = None
-        else:
-            raise ValueError(f"num_rope_tracking_points must be > 0 or == -1 (to use them all). Received {self.num_rope_tracking_points}.")
+        self._distance_normalization_factor = 1.0 / np.linalg.norm(self.right_gripper.cartesian_workspace["high"] - self.right_gripper.cartesian_workspace["low"])
 
     def constrained_value(self, value: float) -> float:
         """Constrains a value to lie within the workspace of the environment.
@@ -444,7 +448,10 @@ class RopeThreadingEnv(SofaEnv):
         ############################################################
         # Check if the rope is still grasped by at least one gripper
         ############################################################
-        if not (self.left_gripper.grasp_established or self.right_gripper.grasp_established):
+        rope_grasped = self.right_gripper.grasp_established
+        if not self.single_agent:
+            rope_grasped = rope_grasped or self.left_gripper.grasp_established
+        if not rope_grasped:
             self.reward_info["lost_grasp"] = True
             reward += self.reward_amount_dict["lost_grasp"]
             self.reward_info["reward_from_losing_grasp"] = self.reward_amount_dict["lost_grasp"]
@@ -586,7 +593,7 @@ class RopeThreadingEnv(SofaEnv):
         ########################
         # Switch to the next eye
         ########################
-        if passed_through and self.reward_amount_dict["bimanual_grasp"]:
+        if (not self.single_agent) and passed_through and self.reward_amount_dict["bimanual_grasp"]:
             # If there is reward for bimanual_grasp, only switch over
             # if the grippers have grasped the rope on opposite sides of the eye.
 
@@ -656,9 +663,12 @@ class RopeThreadingEnv(SofaEnv):
         #######################
         # Collisions with floor
         #######################
-        left_collision_model_positions = self.left_gripper.get_collision_object_positions()
         right_collision_model_positions = self.right_gripper.get_collision_object_positions()
-        floor_collisions = len(left_collision_model_positions[left_collision_model_positions[:, 2] <= 0]) + len(right_collision_model_positions[right_collision_model_positions[:, 2] <= 0])
+        floor_collisions = len(right_collision_model_positions[right_collision_model_positions[:, 2] <= 0])
+        if not self.single_agent:
+            left_collision_model_positions = self.left_gripper.get_collision_object_positions()
+            floor_collisions += len(left_collision_model_positions[left_collision_model_positions[:, 2] <= 0])
+
         if floor_collisions > 0:
             self.reward_info["collisions_with_floor"] = floor_collisions
             self.reward_info["reward_from_collisions_with_floor"] = self.reward_amount_dict["floor_collision"] * floor_collisions
@@ -667,10 +677,15 @@ class RopeThreadingEnv(SofaEnv):
         ############################
         # Workspace and state limits
         ############################
-        self.reward_info["left_gripper_violated_workspace"] = self.left_gripper.last_set_state_violated_workspace_limits
         self.reward_info["right_gripper_violated_workspace"] = self.right_gripper.last_set_state_violated_workspace_limits
-        self.reward_info["left_gripper_violated_state_limits"] = self.left_gripper.last_set_state_violated_state_limits
         self.reward_info["right_gripper_violated_state_limits"] = self.right_gripper.last_set_state_violated_state_limits
+
+        if self.single_agent:
+            self.reward_info["left_gripper_violated_workspace"] = False
+            self.reward_info["left_gripper_violated_state_limits"] = False
+        else:
+            self.reward_info["left_gripper_violated_workspace"] = self.left_gripper.last_set_state_violated_workspace_limits
+            self.reward_info["left_gripper_violated_state_limits"] = self.left_gripper.last_set_state_violated_state_limits
         self.reward_info["reward_from_state_limit_violations"] = self.reward_amount_dict["state_limit_violation"] * (self.reward_info["left_gripper_violated_state_limits"] + self.reward_info["right_gripper_violated_state_limits"])
         self.reward_info["reward_from_workspace_violations"] = self.reward_amount_dict["workspace_violation"] * (self.reward_info["left_gripper_violated_workspace"] + self.reward_info["right_gripper_violated_workspace"])
 
@@ -765,7 +780,11 @@ class RopeThreadingEnv(SofaEnv):
 
         return {**self.info, **self.reward_info, **self.episode_info}
 
-    def reset(self, seed: Union[int, np.random.SeedSequence, None] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Union[np.ndarray, None], Dict]:
+    def reset(
+        self,
+        seed: Union[int, np.random.SeedSequence, None] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Union[np.ndarray, None], Dict]:
         super().reset(seed)
 
         # Seed the instruments
@@ -773,23 +792,52 @@ class RopeThreadingEnv(SofaEnv):
             seeds = self.seed_sequence.spawn(len(self.eyes) + 2)
             for index, eye in enumerate(self.eyes):
                 eye.seed(seeds[index])
-            self.left_gripper.seed(seed=seeds[-2])
             self.right_gripper.seed(seed=seeds[-1])
+            if not self.single_agent:
+                self.left_gripper.seed(seed=seeds[-2])
             self.unconsumed_seed = False
 
         # Reset scene objects
-        self.left_gripper.reset_gripper()
-        self.right_gripper.reset_gripper()
+        def reset_gripper(gripper_key: str, gripper: ArticulatedGripper):
+            if options and gripper_key in options:
+                gripper_reset_options = {
+                    k: options[gripper_key][k] if k in options[gripper_key] else None
+                    for k in ["rcm_pose", "state", "angle"]
+                }
+                gripper.reset_gripper(**gripper_reset_options)
+            else:
+                gripper.reset_gripper()
+
+        reset_gripper("right_gripper", self.right_gripper)
+        if not self.single_agent:
+            reset_gripper("left_gripper", self.left_gripper)
 
         # TODO: This does not work (does nothing -> SOFA bug?)
         self.rope.set_state(self.initial_rope_state)
 
         # Reset the eye states and optionally colors
         new_waypoint_positions = []
-        for eye in self.eyes:
-            eye.set_state(EyeStates.OPEN, self.color_eyes)
-            eye.reset()
-            new_waypoint_positions.append(eye.center_pose[:3])
+        if options and "eye_xyzphi" in options:
+            if not len(options["eye_xyzphi"]) == len(self.eyes):
+                raise ValueError(f"The number of eye positions must match the number of eyes. Got {len(options['eye_xyzphi'])} positions for {len(self.eyes)} eyes.")
+
+            for index, eye in enumerate(self.eyes):
+                eye.set_state(EyeStates.OPEN, self.color_eyes)
+                eye.set_xyzphi(options["eye_xyzphi"][index])
+                new_waypoint_positions.append(eye.center_pose[:3])
+        elif options and "eye_center_xyzphi" in options:
+            if not len(options["eye_center_xyzphi"]) == len(self.eyes):
+                raise ValueError(f"The number of eye positions must match the number of eyes. Got {len(options['eye_center_xyzphi'])} positions for {len(self.eyes)} eyes.")
+
+            for index, eye in enumerate(self.eyes):
+                eye.set_state(EyeStates.OPEN, self.color_eyes)
+                eye.set_center_xyzphi(options["eye_center_xyzphi"][index])
+                new_waypoint_positions.append(eye.center_pose[:3])
+        else:
+            for eye in self.eyes:
+                eye.set_state(EyeStates.OPEN, self.color_eyes)
+                eye.reset()
+                new_waypoint_positions.append(eye.center_pose[:3])
 
         # Update the waypoints in the rope
         self.rope.sphere_roi_center = new_waypoint_positions
@@ -886,15 +934,15 @@ if __name__ == "__main__":
     env.reset()
     done = False
 
+    options = {"eye_xyzphi": [(60, 10, 0, 30)]}
+
     fps_list = deque(maxlen=100)
+    counter = 0
     while not done:
         start = time.perf_counter()
         action = env.action_space.sample()
         for key, val in action.items():
             action[key] = 3.0
-        # TODO: remove this
-        with env.scene_creation_result["board_mo"].position.writeableArray() as pose:
-            pose[0, 0] -= 1.0
         previous_state = env.right_gripper.get_articulated_state().copy()
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
@@ -905,3 +953,8 @@ if __name__ == "__main__":
         fps_list.append(fps)
 
         print(f"FPS Mean: {np.mean(fps_list):.5f}    STD: {np.std(fps_list):.5f}")
+
+        counter += 1
+        if counter % 50 == 0:
+            couter = 0
+            env.reset(options=options)

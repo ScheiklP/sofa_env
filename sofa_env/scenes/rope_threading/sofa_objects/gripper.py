@@ -32,6 +32,43 @@ GRIPPER_PLUGIN_LIST = (
 )
 
 
+def add_shaft_collision_model_func(
+    attached_to: Sofa.Core.Node,
+    self: ArticulatedInstrument,
+    collision_group: int,
+) -> Sofa.Core.Node:
+    name = "collision_shaft"
+    shaft_radius = 2.25
+    shaft_length = 125
+    sphere_collision_positions = np.arange(
+        start=-shaft_radius,
+        stop=shaft_length+shaft_radius,
+        step=2*shaft_radius,
+    )
+    sphere_collision_positions = np.column_stack([
+        np.zeros_like(sphere_collision_positions),
+        np.zeros_like(sphere_collision_positions),
+        -sphere_collision_positions
+    ])
+    collision_node = attached_to.addChild(name)
+    collision_node.addObject(
+        "MechanicalObject",
+        template="Vec3d",
+        position=sphere_collision_positions,
+    )
+    collision_node.addObject(
+        "SphereCollisionModel",
+        group=collision_group,
+        radius=shaft_radius,
+    )
+    collision_node.addObject(
+        "RigidMapping",
+        input=self.physical_shaft_mechanical_object.getLinkPath(),
+        output=collision_node.MechanicalObject.getLinkPath(),
+    )
+    return collision_node
+
+
 class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
     """
     TODO:
@@ -60,6 +97,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
         rotation_axis: Tuple[int, int, int] = (1, 0, 0),
         scale: float = 1.0,
         add_solver_func: Callable = add_solver,
+        add_shaft_collision_model_func = add_shaft_collision_model_func,
         add_visual_model_func: Callable = add_visual_model,
         animation_loop_type: AnimationLoopType = AnimationLoopType.DEFAULT,
         show_object: bool = False,
@@ -128,6 +166,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
             rotation_axis=rotation_axis,
             scale=scale,
             add_solver_func=add_solver_func,
+            add_shaft_collision_model_func=add_shaft_collision_model_func,
             add_visual_model_func=add_visual_model_func,
             animation_loop_type=animation_loop_type,
             show_object=show_object,
@@ -606,13 +645,27 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
 
         return np.concatenate([positions_jaw_0, positions_jaw_1])
 
-    def reset_gripper(self) -> None:
+    def reset_gripper(
+        self,
+        rcm_pose: Optional[np.ndarray] = None,
+        state: Optional[np.ndarray] = None,
+        angle: Optional[float] = None,
+    ) -> None:
 
         #############
         # Reset state
         #############
+        def reset_rcm_pose(new_rcm_pose: np.ndarray):
+            self.pivot_transform = generate_ptsd_to_pose(new_rcm_pose)
+            self.remote_center_of_motion[:] = new_rcm_pose
+            if self.show_remote_center_of_motion:
+                with self.rcm_mechanical_object.position.writeable() as rcm_pose:
+                    rcm_pose[:] = self.pivot_transform((0, 0, 0, 0))
+
+        if rcm_pose is not None:
+            reset_rcm_pose(rcm_pose)
+        elif self.rcm_reset_noise is not None:
         # Generate a new pivot_transform by adding noise to the initial remote_center_of_motion pose
-        if self.rcm_reset_noise is not None:
             if isinstance(self.rcm_reset_noise, np.ndarray):
                 # Uniformly sample from -noise to +noise and add it to the rcm pose
                 new_rcm_pose = self.initial_remote_center_of_motion + self.rng.uniform(-self.rcm_reset_noise, self.rcm_reset_noise)
@@ -621,14 +674,12 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
                 new_rcm_pose = self.initial_remote_center_of_motion + self.rng.uniform(self.rcm_reset_noise["low"], self.rcm_reset_noise["high"])
             else:
                 raise TypeError("Please pass the rcm_reset_noise as a numpy array or a dictionary with 'low' and 'high' keys.")
-            self.pivot_transform = generate_ptsd_to_pose(new_rcm_pose)
-            self.remote_center_of_motion[:] = new_rcm_pose
-            if self.show_remote_center_of_motion:
-                with self.rcm_mechanical_object.position.writeable() as rcm_pose:
-                    rcm_pose[:] = self.pivot_transform((0, 0, 0, 0))
+            reset_rcm_pose(new_rcm_pose)
 
-        # Select a new ptsd state by adding noise to the initial state
-        if self.ptsd_reset_noise is not None:
+        if state is not None:
+            new_state = state
+        elif self.ptsd_reset_noise is not None:
+            # Select a new ptsd state by adding noise to the initial state
             if isinstance(self.ptsd_reset_noise, np.ndarray):
                 # Uniformly sample from -noise to +noise and add it to the initial state
                 new_state = self.initial_state + self.rng.uniform(-self.ptsd_reset_noise, self.ptsd_reset_noise)
@@ -654,8 +705,10 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
         #############
         # Reset angle
         #############
-        # Select a new angle by adding noise to the initial angle
-        if self.angle_reset_noise is not None:
+        if angle is not None:
+            new_angle = angle
+        elif self.angle_reset_noise is not None:
+            # Select a new angle by adding noise to the initial angle
             if isinstance(self.angle_reset_noise, float):
                 # Uniformly sample from -noise to +noise and add it to the initial angle
                 new_angle = self.initial_angle + self.rng.uniform(-self.angle_reset_noise, self.angle_reset_noise)
@@ -666,7 +719,6 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
                 raise TypeError("Please pass the angle_reset_noise as a float or a dictionary with 'low' and 'high' keys.")
 
             new_angle = np.clip(new_angle, self.angle_limits["low"], self.angle_limits["high"])
-
         else:
             new_angle = self.initial_angle
 
