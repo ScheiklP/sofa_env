@@ -135,6 +135,7 @@ class PointCloudObservationWrapper(gym.ObservationWrapper):
         append_object_id (bool): Whether to extend the point cloud with the object id of each point ``[x, y, z, id]``.
         camera_configs (Optional[List]): List of Dicts ``[{"pose": [x, y, z, a, b, c, w], "hfov": float, "width": int, "height": int}]`` including camera parameters for creating the point cloud. Will use the scene's camera if ``None``.
         post_processing_functions (Optional[List[Callable]]): List of functions to post process the created pointcloud.
+        max_num_points (int): Maximum number of points in the pointcloud. Required for the shape of the observation space.
     """
 
     def __init__(
@@ -143,12 +144,15 @@ class PointCloudObservationWrapper(gym.ObservationWrapper):
         append_object_id: bool = False,
         camera_configs: Optional[List] = None,
         post_processing_functions: Optional[List[Callable]] = None,
+        max_num_points = 10000
     ) -> None:
         super().__init__(env)
 
         self.camera_configs = camera_configs
         self.post_processing_functions = post_processing_functions
         self.append_object_id = append_object_id
+
+        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(max_num_points, 3), dtype=np.float32)
 
     def reset(self, **kwargs):
         """Reads the data for the point clouds from the sofa_env after it is resetted."""
@@ -213,6 +217,7 @@ class PointCloudObservationWrapper(gym.ObservationWrapper):
             center = self.camera_object.lookAt.array()
             up_direction = rotated_y_axis(self.camera_object.orientation.array())
             eye = self.camera_object.position.array()
+
             rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(
                 fov_deg=self.hfov,  # field of view of camera
                 center=center,  # lookAt vector
@@ -221,6 +226,7 @@ class PointCloudObservationWrapper(gym.ObservationWrapper):
                 width_px=self.width,
                 height_px=self.height,
             )
+
             ray_list.append(rays)
 
         else:
@@ -249,7 +255,7 @@ class PointCloudObservationWrapper(gym.ObservationWrapper):
                 points = points.append(ids, axis=1)
             point_list.append(points.numpy())
 
-        return np.asarray(point_list).squeeze(axis=0)
+        return np.concatenate(point_list)
 
     def observation(self, observation) -> np.ndarray:
         """Replaces the observation of a step in a sofa_env scene with a point cloud."""
