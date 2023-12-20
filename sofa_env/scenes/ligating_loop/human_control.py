@@ -1,3 +1,4 @@
+from copy import deepcopy
 import numpy as np
 from sofa_env.utils.human_input import XboxController
 from sofa_env.scenes.ligating_loop.ligating_loop_env import LigatingLoopEnv, ObservationType, ActionType, RenderMode
@@ -33,6 +34,14 @@ if __name__ == "__main__":
         frame_skip=1,
         time_step=1 / 30,
         settle_steps=50,
+        randomize_marking_position=False,
+        band_width=8.0,
+        disable_in_cavity_checks=True,
+        create_scene_kwargs={
+            "stiff_loop": False,
+            "num_rope_points": 60,
+            "loop_radius": 20,
+        },
     )
 
     env = RealtimeWrapper(env)
@@ -53,6 +62,25 @@ if __name__ == "__main__":
 
     if args.record_trajectory:
 
+        def save_instrument_state(self: TrajectoryRecorder):
+            self.trajectory["loop_tpsdc_state"].append(deepcopy(self.env.loop.get_articulated_state()))
+            self.trajectory["loop_pose"].append(deepcopy(self.env.loop.get_pose()))
+
+            if len(self.trajectory["loop_tpsdc_state"]) == 1:
+                loop_tpsdc_velocity = np.zeros_like(self.trajectory["loop_tpsdc_state"][0])
+            else:
+                previous_loop_tpsdc_state = self.trajectory["loop_tpsdc_state"][-2]
+                loop_tpsdc_velocity = (self.env.loop.get_articulated_state() - previous_loop_tpsdc_state) / (self.env.time_step * self.env.frame_skip)
+
+            self.trajectory["loop_tpsdc_velocity"].append(loop_tpsdc_velocity)
+
+        def save_deformable_object_points(self: TrajectoryRecorder):
+            cavity_state = self.cavity.get_state()
+
+            self.trajectory["cavity_tracking_positions"].append(deepcopy(cavity_state[self.env.cavity_tracking_point_indices].ravel()))
+            self.trajectory["marking_tracking_positions"].append(deepcopy(cavity_state[self.env.marking_tracking_point_indices].ravel()))
+            self.trajectory["loop_tracking_positions"].append(deepcopy(self.env.loop.get_loop_positions()[self.env.loop_tracking_point_indices].ravel()))
+
         def store_rgb_obs(self: TrajectoryRecorder, shape: Tuple[int, int] = image_shape_to_save):
             observation = self.env.render()
             observation = cv2.resize(
@@ -61,6 +89,9 @@ if __name__ == "__main__":
                 interpolation=cv2.INTER_AREA,
             )
             self.trajectory["rgb"].append(observation)
+
+        def save_time(self: TrajectoryRecorder):
+            self.trajectory["time"].append(len(self.trajectory["time"]) * self.env.time_step * self.env.frame_skip)
 
         metadata = {
             "frame_skip": env.frame_skip,
@@ -75,9 +106,31 @@ if __name__ == "__main__":
             log_dir="trajectories",
             metadata=metadata,
             store_info=True,
-            save_compressed_keys=["observation", "terminal_observation", "rgb", "info"],
-            after_step_callbacks=[store_rgb_obs],
-            after_reset_callbacks=[store_rgb_obs],
+            save_compressed_keys=[
+                "observation",
+                "terminal_observation",
+                "rgb",
+                "info",
+                "loop_tpsdc_state",
+                "loop_tpsdc_velocity",
+                "loop_pose",
+                "cavity_tracking_positions",
+                "marking_tracking_positions",
+                "loop_tracking_positions",
+                "time",
+            ],
+            after_step_callbacks=[
+                store_rgb_obs,
+                save_instrument_state,
+                save_deformable_object_points,
+                save_time,
+            ],
+            after_reset_callbacks=[
+                store_rgb_obs,
+                save_instrument_state,
+                save_deformable_object_points,
+                save_time,
+            ],
         )
 
     reset_obs, reset_info = env.reset()

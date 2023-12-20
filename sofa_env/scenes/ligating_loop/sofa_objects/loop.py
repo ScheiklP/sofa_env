@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Optional, Union, Callable, Dict
+from enum import Enum, unique
 
 import Sofa.Core
 import Sofa.SofaDeformable
@@ -28,6 +29,13 @@ LOOP_PLUGIN_LIST = (
     + TOPOLOGY_PLUGIN_LIST
     + ROPE_PLUGIN_LIST
 )
+
+
+@unique
+class ActionType(Enum):
+    DISCRETE = 0
+    CONTINUOUS = 1
+    POSITION = 2
 
 
 class LigatingLoop(Sofa.Core.Controller):
@@ -93,11 +101,13 @@ class LigatingLoop(Sofa.Core.Controller):
             "low": np.array([-90.0, -90.0, np.finfo(np.float16).min, 0.0]),
             "high": np.array([90.0, 90.0, np.finfo(np.float16).max, 100.0]),
         },
+        action_type: ActionType = ActionType.CONTINUOUS,
     ) -> None:
         Sofa.Core.Controller.__init__(self)
         self.name: Sofa.Core.DataString = f"{name}_controller"
         self.node = parent_node.addChild(f"{self.name.value}_node")
         self.time_integration, self.linear_solver = add_solver_func(attached_to=self.node)
+        self.action_type = action_type
 
         ##############
         # Pivotization
@@ -284,11 +294,18 @@ class LigatingLoop(Sofa.Core.Controller):
         read_only_state.flags.writeable = False
         return read_only_state
 
+    def get_articulated_state(self) -> np.ndarray:
+        """Gets the current state of the instrument including ratio of how closed the loop is."""
+        return np.append(self.get_state(), self.get_ratio_loop_closed())
+
     def get_loop_state(self) -> np.ndarray:
         return self.rope.get_state()
 
     def get_loop_positions(self) -> np.ndarray:
         return self.rope.get_positions()
+
+    def get_loop_velocities(self) -> np.ndarray:
+        return self.rope.get_velocities()
 
     def get_pose(self) -> np.ndarray:
         return self.motion_target_mechanical_object.position.array()[0]
@@ -365,25 +382,36 @@ class LigatingLoop(Sofa.Core.Controller):
         return np.mean(self.rope.get_positions()[0 : self.active_index], axis=0)
 
     def do_action(self, action: np.ndarray) -> None:
-        """Performs an action on the instrument.
+        """Performs an action on the instrument."""
+        if self.action_type == ActionType.POSITION:
+            loop_closedness = action[-1]
+            # denormalize loop_closedness from [0, 1] to range [min_active_index, max_active index]
+            # but inverse, i.e. loop_closedness=0 corresponds to max_active_index
+            min_active_index = 5
+            max_active_index = self.rope.num_points - 1
+            new_active_index_float = min_active_index + (1 - loop_closedness) * (max_active_index - min_active_index)
+            new_active_index_int = round(new_active_index_float)
+            new_active_index_int_clipped = max(min_active_index, min(new_active_index_int, max_active_index))
+            self.active_index = new_active_index_int_clipped
+            # set ptsd state to desired position
+            self.set_state(action[:-1])
 
-        The first four elements of the action will be added to the instrument's ptsd state.
-        The last element closes the loop, if the value is <= -0.5, and openes the loop, if the value is >= 0.5.
-        """
-
-        loop_closing_action = action[-1]
-        if loop_closing_action <= -0.5:
-            new_index = self.active_index + 1
-        elif loop_closing_action >= 0.5:
-            new_index = self.active_index - 1
         else:
-            new_index = self.active_index
+            # The first four elements of the action will be added to the instrument's ptsd state.
+            # The last element closes the loop, if the value is <= -0.5, and openes the loop, if the value is >= 0.5.
+            loop_closing_action = action[-1]
+            if loop_closing_action <= -0.5:
+                new_index = self.active_index + 1
+            elif loop_closing_action >= 0.5:
+                new_index = self.active_index - 1
+            else:
+                new_index = self.active_index
 
-        new_index = max(new_index, 5)
-        new_index = min(new_index, self.rope.num_points - 1)
-        self.active_index = new_index
+            new_index = max(new_index, 5)
+            new_index = min(new_index, self.rope.num_points - 1)
+            self.active_index = new_index
 
-        self.set_state(self.get_state() + action[:-1])
+            self.set_state(self.get_state() + action[:-1])
 
     def set_state(self, state: np.ndarray) -> None:
         """Sets the state of the instrument withing the defined state limits and Cartesian workspace.
@@ -422,7 +450,6 @@ class LigatingLoop(Sofa.Core.Controller):
 
         # Only set the pose, if all components are within the Cartesian workspace.
         if not np.any((self.cartesian_workspace["low"] > pose[:3]) | (pose[:3] > self.cartesian_workspace["high"])):
-
             with self.motion_target_mechanical_object.position.writeable() as sofa_pose:
                 # Set the first (instrument shell) and second (first point on the rope) pose in the motion target to the instrument tip's pose.
                 sofa_pose[0] = pose
@@ -471,7 +498,6 @@ def generate_ptsd_to_pose(rcm_pose: np.ndarray) -> Callable:
     """
 
     def ptsd_to_pose(ptsd: np.ndarray) -> np.ndarray:
-
         rcm_transform = np.eye(4)
         rcm_transform[:3, :3] = euler_to_rotation_matrix(rcm_pose[3:])
         rcm_transform[:3, 3] = rcm_pose[:3]

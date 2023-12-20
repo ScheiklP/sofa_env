@@ -193,7 +193,7 @@ class Cavity:
         # FEM model on Tetrahedra
         self.node.addObject("TetrahedronSetTopologyContainer", tetrahedra=tetrahedra_node.TetrahedronSetTopologyContainer.tetrahedra.array(), position=points)
         self.node.addObject("TetrahedronSetTopologyModifier")
-        self.mechnical_object = self.node.addObject("MechanicalObject", showObject=show_object, showObjectScale=show_object_scale)
+        self.mechanical_object = self.node.addObject("MechanicalObject", showObject=show_object, showObjectScale=show_object_scale)
         self.node.addObject("FastTetrahedralCorotationalForceField", youngModulus=young_modulus, poissonRatio=poisson_ratio)
         self.node.addObject("UniformMass", totalMass=total_mass)
 
@@ -252,13 +252,13 @@ class Cavity:
                 visual_node.addObject("IdentityMapping")
 
     def get_state(self) -> np.ndarray:
-        return self.mechnical_object.position.array()
+        return self.mechanical_object.position.array()
 
     def get_center_of_opening_position(self) -> np.ndarray:
         if self.create_shell:
             return self.shell_mechanical_object.position.array()[-1]
         else:
-            return np.mean(self.mechnical_object.position.array()[self.end_ring_indices][:, :3], axis=0)
+            return np.mean(self.mechanical_object.position.array()[self.end_ring_indices][:, :3], axis=0)
 
     def color_band(self, start: float, end: float, texture_coords_band: Tuple[float, float] = (0.75, 0.75), texture_coords_rest: Tuple[float, float] = (0.25, 0.25)) -> None:
         point_indices_to_color = [i for i, point in enumerate(self.initial_positions) if point[2] > start and point[2] < end]
@@ -281,9 +281,7 @@ class Cavity:
 
     def get_subsampled_indices(self, discretization_radius: int, discretization_angle: int, discretization_height: int) -> List[int]:
         if not self._valid_subsampling(discretization_height=discretization_height, discretization_angle=discretization_angle, discretization_radius=discretization_radius):
-            raise ValueError(
-                f"Cannot subsample the cavity with the given discretization value. Radius {discretization_radius} of {self.discretization_radius}\nHeight {discretization_height} of {self.discretization_height}\nAngle {discretization_angle} of {self.discretization_angle}"
-            )
+            raise ValueError(f"Cannot subsample the cavity with the given discretization value. Radius {discretization_radius} of {self.discretization_radius}\nHeight {discretization_height} of {self.discretization_height}\nAngle {discretization_angle} of {self.discretization_angle}")
 
         subsampled_points, _ = hollow_cylinder_hexahedral_topology_data(
             radius_inner=self.inner_radius,
@@ -307,9 +305,7 @@ class Cavity:
     def get_subsampled_indices_on_band(self, discretization_radius: int, discretization_angle: int, discretization_height: int) -> List[int]:
 
         if not self._valid_subsampling(discretization_height=discretization_height, discretization_angle=discretization_angle, discretization_radius=discretization_radius):
-            raise ValueError(
-                f"Cannot subsample the cavity with the given discretization value. Radius {discretization_radius} of {self.discretization_radius}\nHeight {discretization_height} of {self.discretization_height}\nAngle {discretization_angle} of {self.discretization_angle}"
-            )
+            raise ValueError(f"Cannot subsample the cavity with the given discretization value. Radius {discretization_radius} of {self.discretization_radius}\nHeight {discretization_height} of {self.discretization_height}\nAngle {discretization_angle} of {self.discretization_angle}")
 
         subsampled_points, _ = hollow_cylinder_hexahedral_topology_data(
             radius_inner=self.inner_radius,
@@ -354,7 +350,7 @@ class Cavity:
             raise ValueError(f"Cannot compute if no shell was created. {self.create_shell=}")
 
     def set_state(self, state: np.ndarray) -> None:
-        with self.mechnical_object.position.writeable() as sofa_state:
+        with self.mechanical_object.position.writeable() as sofa_state:
             sofa_state[:] = state
 
     def reset_cavity(self) -> None:
@@ -391,3 +387,7 @@ class Cavity:
     def seed(self, seed: Union[int, np.random.SeedSequence]) -> None:
         """Creates a random number generator from a seed."""
         self.rng = np.random.default_rng(seed)
+
+    def get_tissue_velocities(self) -> np.ndarray:
+        """Get the velocities of the tissue vertices"""
+        return self.mechanical_object.velocity.array()

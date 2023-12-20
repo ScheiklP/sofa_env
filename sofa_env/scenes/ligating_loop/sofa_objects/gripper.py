@@ -114,6 +114,8 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
 
         self.cartesian_workspace = cartesian_workspace
         self.state_limits = state_limits
+        if not isinstance(angle_limits, Dict):
+            angle_limits = {"low": angle_limits[0], "high": angle_limits[1]}
         self.angle_limits = angle_limits
 
         self.last_set_state_violated_state_limits = False

@@ -15,6 +15,7 @@ from sofa_env.scenes.rope_threading.sofa_objects.camera import ControllableCamer
 from sofa_env.scenes.ligating_loop.sofa_objects.loop import LigatingLoop, LOOP_PLUGIN_LIST
 from sofa_env.scenes.ligating_loop.sofa_objects.gripper import ArticulatedGripper, GRIPPER_PLUGIN_LIST
 from sofa_env.scenes.ligating_loop.sofa_objects.cavity import Cavity, CAVITY_PLUGIN_LIST
+from sofa_env.scenes.ligating_loop.ligating_loop_env import ActionType
 
 
 from sofa_env.sofa_templates.scene_header import AnimationLoopType, ConstraintSolverType, IntersectionMethod, add_scene_header, VISUAL_STYLES, SCENE_HEADER_PLUGIN_LIST
@@ -53,6 +54,7 @@ def createScene(
     num_rope_points: int = 50,
     loop_radius: float = 15.0,
     band_width: float = 6.0,
+    loop_action_type: ActionType = ActionType.CONTINUOUS,
 ) -> Dict:
     """
     Creates the scene of the LigatingLoopEnv.
@@ -68,6 +70,7 @@ def createScene(
         stiff_loop (bool): Whether to set the mechanical parameters of the loop such that the loop is keeping a round shape under gravity.
         loop_radius (float): Radius of the loop in millimeters.
         band_width (float): SET BY ENV. Width of the marking in millimeters.
+        loop_action_type (ActionType): Determines, how actions are applied to the loop.
 
     Returns:
         scene_creation_result = {
@@ -102,7 +105,7 @@ def createScene(
         contact_friction=0.0,
         constraint_solver=ConstraintSolverType.GENERIC,
         constraint_solver_kwargs={
-            "maxIterations": 300,
+            "maxIterations": 1000,
             "tolerance": 0.001,
             "computeConstraintForces": False,
             "scaleTolerance": True,
@@ -222,6 +225,7 @@ def createScene(
         mechanical_binding=MechanicalBinding.SPRING,
         spring_stiffness=9e20,
         angular_spring_stiffness=9e20,
+        action_type=loop_action_type,
     )
 
     if not positioning_camera:

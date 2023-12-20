@@ -12,6 +12,7 @@ from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from sofa_env.scenes.ligating_loop.sofa_objects.gripper import ArticulatedGripper
 from sofa_env.scenes.ligating_loop.sofa_objects.cavity import Cavity
 from sofa_env.scenes.ligating_loop.sofa_objects.loop import LigatingLoop
+from sofa_env.scenes.ligating_loop.sofa_objects.loop import ActionType as LoopActionType
 from sofa_env.scenes.rope_threading.sofa_objects.camera import ControllableCamera
 
 HERE = Path(__file__).resolve().parent
@@ -33,6 +34,7 @@ class ActionType(Enum):
 
     DISCRETE = 0
     CONTINUOUS = 1
+    POSITION = 2
 
 
 class LigatingLoopEnv(SofaEnv):
@@ -65,6 +67,7 @@ class LigatingLoopEnv(SofaEnv):
         with_gripper (bool): Whether to include a gripper as a second instrument.
         individual_agents (bool): Whether the instruments are controlled individually, or the action is one large array.
         band_width (float): Width of the marking in millimeters.
+        disable_in_cavity_checks (bool): Whether to disable the reward features instrument_not_in_cavity and loop_center_in_cavity.
     """
 
     def __init__(
@@ -110,13 +113,25 @@ class LigatingLoopEnv(SofaEnv):
         with_gripper: bool = False,
         individual_agents: bool = False,
         band_width: float = 6.0,
+        disable_in_cavity_checks: bool = False,
+        randomize_loop_state: bool = True,
+        loop_ptsd_reset_noise: np.ndarray = np.array([20.0, 20.0, 0.0, 10.0]),
+        loop_closure_reset_interval: np.ndarray = np.array([0.0, 1.0]),
     ) -> None:
         # Pass image shape to the scene creation function
-        if not isinstance(create_scene_kwargs, dict):
+        if create_scene_kwargs is None:
             create_scene_kwargs = {}
         create_scene_kwargs["image_shape"] = image_shape
         create_scene_kwargs["with_gripper"] = with_gripper
         create_scene_kwargs["band_width"] = band_width
+
+        if action_type == ActionType.POSITION:
+            loop_action_type = LoopActionType.POSITION
+        elif action_type == ActionType.CONTINUOUS:
+            loop_action_type = LoopActionType.CONTINUOUS
+        else:
+            loop_action_type = LoopActionType.DISCRETE
+        create_scene_kwargs["loop_action_type"] = loop_action_type
 
         super().__init__(
             scene_path=scene_path,
@@ -129,6 +144,8 @@ class LigatingLoopEnv(SofaEnv):
 
         # How many simulation steps to wait before starting the episode
         self._settle_steps = settle_steps
+
+        self.disable_in_cavity_checks = disable_in_cavity_checks
 
         self.individual_agents = individual_agents
         self.with_gripper = with_gripper
@@ -144,12 +161,70 @@ class LigatingLoopEnv(SofaEnv):
         self.randomize_marking_position = randomize_marking_position
         self.band_width = band_width
 
+        self.randomize_loop_state = randomize_loop_state
+        self.loop_ptsd_reset_noise = loop_ptsd_reset_noise
+        self.loop_closure_reset_interval = loop_closure_reset_interval
+
         ##############
         # Action Space
         ##############
+        min_angle = 0.0
+        max_angle = 60.0
+
         action_dimensionality = 5
         self.action_type = action_type
-        if action_type == ActionType.CONTINUOUS:
+        if action_type == ActionType.POSITION:
+            action_space_limits = {
+                "low": np.array([-90.0, -90.0, np.finfo(np.float16).min, 0.0]),
+                "high": np.array([90.0, 90.0, np.finfo(np.float16).max, 100.0]),
+            }
+            self.min_angle = min_angle
+            self.max_angle = max_angle
+            if with_gripper:
+                if individual_agents:
+                    self._do_action = self._do_action_dict
+                    self.action_space = spaces.Dict(
+                        {
+                            "ligating_loop": spaces.Box(
+                                low=np.append(action_space_limits["low"], 0.0),
+                                high=np.append(action_space_limits["high"], 1.0),
+                                shape=(action_dimensionality,),
+                                dtype=np.float32,
+                            ),
+                            "gripper": spaces.Box(
+                                low=np.append(action_space_limits["low"], min_angle),
+                                high=np.append(action_space_limits["high"], max_angle),
+                                shape=(action_dimensionality,),
+                                dtype=np.float32,
+                            ),
+                        }
+                    )
+                else:
+                    self._do_action = self._do_action_array
+                    # The first 5 values are for the gripper, the remaining 5 for the loop
+                    self.action_space = spaces.Box(
+                        low=np.concatenate(
+                            np.append(action_space_limits["low"], 0.0),
+                            np.append(action_space_limits["low"], 1.0),
+                        ),
+                        high=np.concatenate(
+                            np.append(action_space_limits["high"], max_rope_index),
+                            np.append(action_space_limits["high"], max_angle),
+                        ),
+                        shape=(action_dimensionality * 2,),
+                        dtype=np.float32,
+                    )
+
+            else:
+                self._do_action = self._do_loop_action
+                self.action_space = spaces.Box(
+                    low=np.append(action_space_limits["low"], 0.0),
+                    high=np.append(action_space_limits["high"], 1.0),
+                    shape=(action_dimensionality,),
+                    dtype=np.float32,
+                )
+
+        elif action_type == ActionType.CONTINUOUS:
             self._scale_action = self._scale_continuous_action
             if with_gripper:
                 if individual_agents:
@@ -303,7 +378,7 @@ class LigatingLoopEnv(SofaEnv):
         if len(self.marking_tracking_point_indices) == 0 and self.observation_type == ObservationType.STATE:
             raise ValueError(f"Something went wrong with determining the tracking points on the marked band...\n{self.num_tracking_points_marking=}")
 
-    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, dict]:
+    def step(self, action: Any) -> Tuple[Union[np.ndarray, dict], float, bool, bool, dict]:
         """Step function of the environment that applies the action to the simulation and returns observation, reward, done signal, and info."""
 
         maybe_rgb_observation = super().step(action)
@@ -313,7 +388,7 @@ class LigatingLoopEnv(SofaEnv):
         done = self._get_done()
         info = self._get_info()
 
-        return observation, reward, done, info
+        return observation, reward, done, False, info
 
     def _scale_continuous_action(self, action: np.ndarray, loop: bool = True) -> np.ndarray:
         """
@@ -340,45 +415,56 @@ class LigatingLoopEnv(SofaEnv):
 
     def _do_action_dict(self, action: Dict[str, np.ndarray]) -> None:
         """Apply action to the simulation."""
-        self.gripper.set_articulated_state(self.gripper.get_articulated_state() + self._scale_action(action["gripper"], loop=False))
-        self.loop_activation_counter += 1
-        if self.loop_activation_counter == 1:
-            pass
-        else:
-            if self.loop_activation_counter < self.frame_skip:
-                action["ligating_loop"][-1] = 0.0
+
+        if self.action_type in [ActionType.CONTINUOUS, ActionType.DISCRETE]:
+            self.gripper.set_articulated_state(self.gripper.get_articulated_state() + self._scale_action(action["gripper"], loop=False))
+            self.loop_activation_counter += 1
+            if self.loop_activation_counter == 1:
+                pass
             else:
-                self.loop_activation_counter = 0
-        self.loop.do_action(self._scale_action(action["ligating_loop"]))
+                if self.loop_activation_counter < self.frame_skip:
+                    action["ligating_loop"][-1] = 0.0
+                else:
+                    self.loop_activation_counter = 0
+            self.loop.do_action(self._scale_action(action["ligating_loop"]))
+        else:  # Position control, directly set loop to desired position
+            self.gripper.set_articulated_state(action["gripper"])
+            self.loop.do_action(action["ligating_loop"])
 
     def _do_action_array(self, action: np.ndarray) -> None:
         """Apply action to the simulation."""
-        self.gripper.set_articulated_state(self.gripper.get_articulated_state() + self._scale_action(action[:5], loop=False))
-
-        self.loop_activation_counter += 1
-        if self.loop_activation_counter == 1:
-            pass
-        else:
-            if self.loop_activation_counter < self.frame_skip:
-                action[-1] = 0.0
+        if self.action_type in [ActionType.CONTINUOUS, ActionType.DISCRETE]:
+            self.gripper.set_articulated_state(self.gripper.get_articulated_state() + self._scale_action(action[:5], loop=False))
+            self.loop_activation_counter += 1
+            if self.loop_activation_counter == 1:
+                pass
             else:
-                self.loop_activation_counter = 0
+                if self.loop_activation_counter < self.frame_skip:
+                    action[-1] = 0.0
+                else:
+                    self.loop_activation_counter = 0
 
-        self.loop.do_action(self._scale_action[action[5:]])
+            self.loop.do_action(self._scale_action[action[5:]])
+        else:  # Position control, directly set loop to desired position
+            self.gripper.set_articulated_state(action[:5])
+            self.loop.do_action(action[5:])
 
     def _do_loop_action(self, action: np.ndarray) -> None:
         """Apply action to the simulation."""
 
-        self.loop_activation_counter += 1
-        if self.loop_activation_counter == 1:
-            pass
-        else:
-            if self.loop_activation_counter < self.frame_skip:
-                action[-1] = 0.0
+        if self.action_type in [ActionType.CONTINUOUS, ActionType.DISCRETE]:
+            self.loop_activation_counter += 1
+            if self.loop_activation_counter == 1:
+                pass
             else:
-                self.loop_activation_counter = 0
+                if self.loop_activation_counter < self.frame_skip:
+                    action[-1] = 0.0
+                else:
+                    self.loop_activation_counter = 0
 
-        self.loop.do_action(self._scale_action(action))
+            self.loop.do_action(self._scale_action(action))
+        else:  # Position control, directly set loop to desired position
+            self.loop.do_action(action)
 
     def _get_reward_features(self, previous_reward_features: dict) -> dict:
         """Get the features that may be used to assemble the reward function
@@ -406,10 +492,16 @@ class LigatingLoopEnv(SofaEnv):
         reward_features["delta_distance_loop_to_marking_center"] = reward_features["distance_loop_to_marking_center"] - previous_reward_features["distance_loop_to_marking_center"]
 
         # Is the center of mass of the loop inside the cavity's shell?
-        reward_features["loop_center_in_cavity"] = self.cavity.is_in_cavity(loop_center_of_mass)
+        if self.disable_in_cavity_checks:
+            reward_features["loop_center_in_cavity"] = False
+        else:
+            reward_features["loop_center_in_cavity"] = self.cavity.is_in_cavity(loop_center_of_mass)
 
         # Is the instrument tip inside the cavity's shell?
-        reward_features["instrument_not_in_cavity"] = not self.cavity.is_in_cavity(self.loop.get_pose()[:3])
+        if self.disable_in_cavity_checks:
+            reward_features["instrument_not_in_cavity"] = True
+        else:
+            reward_features["instrument_not_in_cavity"] = not self.cavity.is_in_cavity(self.loop.get_pose()[:3])
 
         # Unwanted collisions between the instrument shaft and the cavity.
         reward_features["instrument_shaft_collisions"] = self.contact_listeners["shaft"].getNumberOfContacts()
@@ -426,7 +518,10 @@ class LigatingLoopEnv(SofaEnv):
         reward_features["loop_marking_overlap"] = len(set(loop_contacts_with_marking)) / maximum_contact_amount
 
         # Closing the loop [0, 1] scaled by contact to the colored marking, masked if the loop is not around cavity
-        reward_features["loop_closed_around_marking"] = self.loop.get_ratio_loop_closed() * reward_features["loop_marking_overlap"] * reward_features["loop_center_in_cavity"] * reward_features["instrument_not_in_cavity"]
+        if self.disable_in_cavity_checks:
+            reward_features["loop_closed_around_marking"] = self.loop.get_ratio_loop_closed() * reward_features["loop_marking_overlap"]
+        else:
+            reward_features["loop_closed_around_marking"] = self.loop.get_ratio_loop_closed() * reward_features["loop_marking_overlap"] * reward_features["loop_center_in_cavity"] * reward_features["instrument_not_in_cavity"]
 
         # Closing the loop [0, 1] when the loop is not around the cavity
         reward_features["loop_closed_in_thin_air"] = self.loop.get_ratio_loop_closed() * (1 - reward_features["loop_center_in_cavity"])
@@ -521,18 +616,46 @@ class LigatingLoopEnv(SofaEnv):
                 self.gripper.seed(seed=seeds[1])
             self.unconsumed_seed = False
 
+        # Reset loop
         self.loop.reset_state()
         self.loop_activation_counter = 0
 
+        def reset_loop(state: np.ndarray, closedness: float):
+            # denormalize loop closedness to range [min_active_index, max_active index]
+            # but inverse, i.e. closedness=0 corresponds to max_active_index
+            min_active_index = 5
+            max_active_index = self.loop.rope.num_points - 1
+            new_active_index_float = min_active_index + (1 - closedness) * (max_active_index - min_active_index)
+            new_active_index_int = round(new_active_index_float)
+            new_active_index_int_clipped = max(min_active_index, min(new_active_index_int, max_active_index))
+            #self.loop.active_index = new_active_index_int_clipped
+            for index in range(self.loop.active_index, new_active_index_int_clipped - 1, -1):
+                self.loop.active_index = index
+                self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
+            #assert self.loop.active_index == new_active_index_int_clipped
+            self.loop.set_state(state)
+
+        if options and "loop_state" in options:
+            reset_loop(options["loop_state"][:-1], options["loop_state"][-1])
+        elif self.randomize_loop_state:
+            # Optionally add noise to the loop
+            loop_closedness = self.rng.uniform(*self.loop_closure_reset_interval)
+            ptsd_state_noise = self.rng.uniform(-self.loop_ptsd_reset_noise, self.loop_ptsd_reset_noise)
+            reset_loop(self.loop.get_state() + ptsd_state_noise, loop_closedness)
+
+        # Reset the gripper
         if self.gripper is not None:
             # Reset the gripper
             self.gripper.reset_gripper()
 
+        # Colored band on cavity
         if self.randomize_marking_position:
             band_start = self.rng.uniform(20, self.cavity.height - 10)
-            self.cavity.color_band(band_start, band_start + self.band_width)
-            self.colored_collision_model_indices = self.cavity.colored_collision_model_indices
-            self.colored_fem_indices = self.cavity.colored_fem_indices
+        else:
+            band_start = self.cavity.height - 15.0
+        self.cavity.color_band(band_start, band_start + self.band_width)
+        self.colored_collision_model_indices = self.cavity.colored_collision_model_indices
+        self.colored_fem_indices = self.cavity.colored_fem_indices
 
         # Clear the episode info values
         for key in self.episode_info:
@@ -555,6 +678,12 @@ class LigatingLoopEnv(SofaEnv):
         # Animate several timesteps without actions until simulation settles
         for _ in range(self._settle_steps):
             self.sofa_simulation.animate(self._sofa_root_node, self._sofa_root_node.getDt())
+
+        # Do one call to the jit compiled function to move the compunation time here, instead of the first step call.
+        if not self.disable_in_cavity_checks:
+            loop_center_of_mass = self.loop.get_center_of_mass()
+            self.cavity.is_in_cavity(loop_center_of_mass)
+            self.cavity.is_in_cavity(self.loop.get_pose()[:3])
 
         return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
@@ -583,8 +712,9 @@ if __name__ == "__main__":
         for _ in range(100):
             start = time.perf_counter()
             action = env.action_space.sample()
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             end = time.perf_counter()
+            done = terminated or truncated
             fps = 1 / (end - start)
             fps_list.append(fps)
             # pp.pprint(info)
