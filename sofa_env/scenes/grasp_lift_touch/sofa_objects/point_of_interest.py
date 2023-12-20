@@ -81,9 +81,11 @@ class PointOfInterest(RigidObject):
         self.activated = False
         if self.randomized_pose:
             self.pose_index = self.rng.integers(0, len(self.possible_target_poses))
-            self.pose = np.array(self.possible_target_poses[self.pose_index])
-            with self.mechanical_object.position.writeable() as positions:
-                positions[0] = self.pose
+        else:
+            self.pose_index = 0
+        self.pose = np.array(self.possible_target_poses[self.pose_index])
+        with self.mechanical_object.position.writeable() as positions:
+            positions[0] = self.pose
 
     def set_color(self, color: Tuple[float, float, float]) -> None:
         set_color(self.visual_model_node.OglModel, color=color)

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from sofa_env.utils.human_input import XboxController
 from sofa_env.wrappers.realtime import RealtimeWrapper
 from sofa_env.wrappers.trajectory_recorder import TrajectoryRecorder
@@ -18,6 +19,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     controller = XboxController()
+    time.sleep(0.1)
     if not controller.is_alive():
         raise RuntimeError("Could not find Xbox controller.")
 
@@ -64,11 +66,43 @@ if __name__ == "__main__":
             )
             self.trajectory["rgb"].append(observation)
 
+        def save_instrument_states(self: TrajectoryRecorder):
+            self.trajectory["gripper_tpsda_state"].append(deepcopy(self.env.gripper.articulated_state))
+            self.trajectory["cauter_tpsd_state"].append(deepcopy(self.env.cauter.ptsd_state))
+            self.trajectory["gripper_pose"].append(deepcopy(self.env.gripper.get_pose()))
+            self.trajectory["cauter_pose"].append(deepcopy(self.env.cauter.get_pose()))
+
+        def save_instrument_velocities(self: TrajectoryRecorder):
+            if len(self.trajectory["gripper_tpsda_state"]) == 1:
+                gripper_tpsda_velocity = np.zeros_like(self.trajectory["gripper_tpsda_state"][0])
+                cauter_tpsd_velocity = np.zeros_like(self.trajectory["cauter_tpsd_state"][0])
+            else:
+                previous_gripper_tpsda_state = self.trajectory["gripper_tpsda_state"][-2]
+                gripper_tpsda_velocity = (self.env.gripper.articulated_state - previous_gripper_tpsda_state) / (self.env.time_step * self.env.frame_skip)
+                previous_cauter_tpsd_state = self.trajectory["cauter_tpsd_state"][-2]
+                cauter_tpsd_velocity = (self.env.cauter.ptsd_state - previous_cauter_tpsd_state) / (self.env.time_step * self.env.frame_skip)
+
+            self.trajectory["gripper_tpsda_velocity"].append(gripper_tpsda_velocity)
+            self.trajectory["cauter_tpsd_velocity"].append(cauter_tpsd_velocity)
+
+        def save_gallbladder_state(self: TrajectoryRecorder):
+            self.trajectory["gallbladder_state"].append(deepcopy(self.env.gallbladder_surface_mechanical_object.position.array()[self.env.gallbladder_tracking_indices].ravel()))
+
+        def save_phase(self: TrajectoryRecorder):
+            self.trajectory["phase"].append([self.env.active_phase.value])  # stored as a single element list to have a shape of [T, 1] instead of [T]
+
+        def save_time(self: TrajectoryRecorder):
+            self.trajectory["time"].append(len(self.trajectory["time"]) * self.env.time_step * self.env.frame_skip)
+
+        serializable_reward_amount_dict = {}
+        for key, val in env.reward_amount_dict.items():
+            serializable_reward_amount_dict[key.name] = val
+
         metadata = {
             "frame_skip": env.frame_skip,
             "time_step": env.time_step,
             "observation_type": env.observation_type.name,
-            "reward_amount_dict": env.reward_amount_dict,
+            "reward_amount_dict": serializable_reward_amount_dict,
             "user_info": args.info,
         }
 
@@ -77,9 +111,37 @@ if __name__ == "__main__":
             log_dir="trajectories",
             metadata=metadata,
             store_info=True,
-            save_compressed_keys=["observation", "terminal_observation", "rgb", "info"],
-            after_step_callbacks=[store_rgb_obs],
-            after_reset_callbacks=[store_rgb_obs],
+            save_compressed_keys=[
+                "observation",
+                "terminal_observation",
+                "rgb",
+                "info",
+                "gripper_tpsda_state",
+                "cauter_tpsd_state",
+                "gripper_tpsda_velocity",
+                "cauter_tpsd_velocity",
+                "gripper_pose",
+                "cauter_pose",
+                "gallbladder_state",
+                "phase",
+                "time",
+            ],
+            after_step_callbacks=[
+                store_rgb_obs,
+                save_instrument_states,
+                save_instrument_velocities,
+                save_gallbladder_state,
+                save_phase,
+                save_time,
+            ],
+            after_reset_callbacks=[
+                store_rgb_obs,
+                save_instrument_states,
+                save_instrument_velocities,
+                save_gallbladder_state,
+                save_phase,
+                save_time,
+            ],
         )
 
     reset_obs, reset_info = env.reset()

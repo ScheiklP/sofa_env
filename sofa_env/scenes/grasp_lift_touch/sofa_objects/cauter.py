@@ -84,6 +84,16 @@ class Cauter(PivotizedCauter):
         if abs(action[-1]) > self.activation_deadzone:
             self.active = True if action[-1] > 0 else False
 
+    def set_extended_state(self, state: np.ndarray) -> None:
+        """Set the ptsd state and the activation state.
+
+        Args:
+            state: State in the form of an array with ptsd and activation values.
+        """
+        self.set_state(state=state[:4])
+        if abs(state[-1]) > self.activation_deadzone:
+            self.active = True if state[-1] > 0 else False
+
     def get_ptsda_state(self):
         return np.append(self.ptsd_state, float(self.active))
 

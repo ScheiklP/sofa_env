@@ -75,6 +75,8 @@ class CollisionEffect(Enum):
 class ActionType(Enum):
     DISCRETE = 0
     CONTINUOUS = 1
+    VELOCITY = 2
+    POSITION = 3
 
 
 class GraspLiftTouchEnv(SofaEnv):
@@ -110,9 +112,12 @@ class GraspLiftTouchEnv(SofaEnv):
         collision_punish_mode (CollisionEffect): How to punish collisions.
         losing_grasp_ends_episode (bool): Whether losing the grasp ends the episode.
         num_gallbladder_tracking_points (int): Number of points on the gallbladder to track for state observations.
+        randomize_gallbladder_tracking_points (bool): Whether to pick a new set of indices for the tracking points on the gallbladder for each reset.
+        randomize_point_of_interest (bool): Whether to pick a new point of interest for each reset.
         max_gallbladder_liver_overlap (float): Amount of overlap between the gallbladder and the liver to accept before blocking the done signal.
         gallbladder_force_scaling_factor (float): Scaling factor for the force measured in the gallbladder (see reward function).
         limit_grasping_attempts_in_reset (bool): Whether to limit the number of grasping attempts in the reset function, if the starting phase is past the grasping phase.
+        cauter_has_to_activate_in_target (bool): Whether the cauter has to be activated in the target point to end the episode.
     """
 
     def __init__(
@@ -175,14 +180,19 @@ class GraspLiftTouchEnv(SofaEnv):
         collision_punish_mode: CollisionEffect = CollisionEffect.CONSTANT,
         losing_grasp_ends_episode: bool = False,
         num_gallbladder_tracking_points: int = 10,
+        randomize_gallbladder_tracking_points: bool = True,
+        randomize_point_of_interest: bool = True,
         max_gallbladder_liver_overlap: float = 0.1,
         gallbladder_force_scaling_factor: float = 1e-9,
         limit_grasping_attempts_in_reset: bool = False,
+        cauter_has_to_activate_in_target: bool = True,
     ):
         # Pass image shape to the scene creation function
         if not isinstance(create_scene_kwargs, dict):
             create_scene_kwargs = {}
         create_scene_kwargs["image_shape"] = image_shape
+
+        create_scene_kwargs["randomize_poi_position"] = randomize_point_of_interest
 
         if render_mode == RenderMode.NONE:
             raise ValueError("This environment does not support render mode NONE, use HEADLESS instead. We need to render the scene to check if the target is visible to the camera which is part of the LIFT phase of the task.")
@@ -231,6 +241,9 @@ class GraspLiftTouchEnv(SofaEnv):
         # Does losing a grasp end an episode early?
         self.losing_grasp_ends_episode = losing_grasp_ends_episode
 
+        # Does the cauter have to activate in the target, or just touch the target?
+        self.cauter_has_to_activate_in_target = cauter_has_to_activate_in_target
+
         # How much of the gallbladder is allowed to be in the liver, before blocking the done signal of the LIFT phase
         self.max_gallbladder_liver_overlap = max_gallbladder_liver_overlap
 
@@ -253,6 +266,7 @@ class GraspLiftTouchEnv(SofaEnv):
 
         # How many points on the gallbladder surface to include in the state observations
         self.num_gallbladder_tracking_points = num_gallbladder_tracking_points
+        self.randomize_gallbladder_tracking_points = randomize_gallbladder_tracking_points
         if self.observation_type == ObservationType.STATE:
             # pose of the gripper -> 7
             # pose of the cauter -> 7
@@ -276,6 +290,7 @@ class GraspLiftTouchEnv(SofaEnv):
         ######################
         # Set up action spaces
         ######################
+        self.action_type = action_type
         action_dimensionality = 5
         self._maximum_state_velocity = maximum_state_velocity
         self._discrete_action_magnitude = discrete_action_magnitude
@@ -289,6 +304,32 @@ class GraspLiftTouchEnv(SofaEnv):
                     }
                 )
                 self._scale_action = self._scale_continuous_action
+
+            elif action_type == ActionType.POSITION:
+                # Same as the state limits of the instruments
+                action_space_limits = {
+                    "low": np.array([-75.0, -40.0, -1000.0, 12.0]),
+                    "high": np.array([75.0, 75.0, 1000.0, 300.0]),
+                }
+                self.action_space = spaces.Dict(
+                    {
+                        "gripper": spaces.Box(
+                            low=np.append(action_space_limits["low"], 0.0),
+                            high=np.append(action_space_limits["high"], 60.0),
+                            shape=(action_dimensionality,),
+                            dtype=np.float32,
+                        ),
+                        "cauter": spaces.Box(
+                            low=np.append(action_space_limits["low"], -1.0),
+                            high=np.append(action_space_limits["high"], 1.0),
+                            shape=(action_dimensionality,),
+                            dtype=np.float32,
+                        ),
+                    }
+                )
+            elif action_type == ActionType.VELOCITY:
+                raise NotImplementedError("Velocity actions are not yet implemented.")
+
             else:
                 self.action_space = spaces.Dict(
                     {
@@ -319,8 +360,22 @@ class GraspLiftTouchEnv(SofaEnv):
         else:
             self._do_action = self._do_action_array
             if action_type == ActionType.CONTINUOUS:
-                self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
+                self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(action_dimensionality * 2,), dtype=np.float32)
                 self._scale_action = self._scale_continuous_action
+            elif action_type == ActionType.POSITION:
+                # Same as the state limits of the instruments
+                action_space_limits = {
+                    "low": np.array([-75.0, -40.0, -1000.0, 12.0, -1.0] * 2),
+                    "high": np.array([75.0, 75.0, 1000.0, 300.0, 1.0] * 2),
+                }
+
+                # Adapt the angle limits of the gripper
+                action_space_limits["low"][4] = 0.0
+                action_space_limits["high"][4] = 90.0
+
+                self.action_space = spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(action_dimensionality * 2,), dtype=np.float32)
+            elif action_type == ActionType.VELOCITY:
+                raise NotImplementedError("Velocity actions are not yet implemented.")
             else:
                 raise NotImplementedError("GraspLiftTouchEnv currently only supports continuous actions for non-individual agents.")
 
@@ -330,13 +385,21 @@ class GraspLiftTouchEnv(SofaEnv):
 
     def _do_action_dict(self, action: Dict[str, np.ndarray]) -> None:
         """Apply action to the simulation."""
-        self.gripper.do_action(self._scale_action(action["gripper"]))
-        self.cauter.do_action(self._scale_action(action["cauter"]))
+        if self.action_type == ActionType.POSITION:
+            self.gripper.set_articulated_state(action["gripper"])
+            self.cauter.set_extended_state(action["cauter"])
+        else:
+            self.gripper.do_action(self._scale_action(action["gripper"]))
+            self.cauter.do_action(self._scale_action(action["cauter"]))
 
     def _do_action_array(self, action: np.ndarray) -> None:
         """Apply action to the simulation."""
-        self.gripper.do_action(self._scale_action(action[:5]))
-        self.cauter.do_action(self._scale_action(action[5:]))
+        if self.action_type == ActionType.POSITION:
+            self.gripper.set_articulated_state(action[:5])
+            self.cauter.set_extended_state(action[5:])
+        else:
+            self.gripper.do_action(self._scale_action(action[:5]))
+            self.cauter.do_action(self._scale_action(action[5:]))
 
     def _scale_discrete_action(self, action: int) -> np.ndarray:
         """Maps action indices to a motion delta."""
@@ -426,7 +489,10 @@ class GraspLiftTouchEnv(SofaEnv):
             # Select indices on the gallbladder surface as tracking points for state observations
             self.gallbladder_surface_mechanical_object = self.gallbladder.collision_model_node.MechanicalObject
             gallbladder_surface_points = self.gallbladder_surface_mechanical_object.position.array()
-            first_gallbladder_tracking_point_index = self.rng.integers(low=0, high=len(gallbladder_surface_points), endpoint=False)
+            if self.randomize_gallbladder_tracking_points:
+                first_gallbladder_tracking_point_index = self.rng.integers(low=0, high=len(gallbladder_surface_points), endpoint=False)
+            else:
+                first_gallbladder_tracking_point_index = 0
             tracking_point_indices = farthest_point_sampling(
                 gallbladder_surface_points,
                 self.num_gallbladder_tracking_points,
@@ -590,8 +656,14 @@ class GraspLiftTouchEnv(SofaEnv):
                     self.active_phase = Phase.LIFT
 
         # Figuring out whether the task is done
-        if self.active_phase == Phase.TOUCH and reward_features["cauter_activation_in_target"]:
-            self.active_phase = Phase.DONE
+        if self.active_phase == Phase.TOUCH:
+            if self.cauter_has_to_activate_in_target:
+                done = reward_features["cauter_activation_in_target"]
+            else:
+                done = reward_features["cauter_touches_target"]
+
+            if done:
+                self.active_phase = Phase.DONE
 
         # Giving the successful task reward, if the ending phase is reached
         if self.active_phase == self.ending_phase:

@@ -156,3 +156,7 @@ class Gallbladder(DeformableObject):
     def get_internal_force_magnitude(self) -> np.ndarray:
         """Get the sum of magnitudes of the internal forces applied to each vertex of the mesh"""
         return np.sum(np.linalg.norm(self.mechanical_object.force.array(), axis=1))
+
+    def get_tissue_velocities(self) -> np.ndarray:
+        """Get the velocities of the tissue vertices"""
+        return self.mechanical_object.velocity.array()

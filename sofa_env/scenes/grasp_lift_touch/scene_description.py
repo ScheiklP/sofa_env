@@ -50,6 +50,7 @@ def createScene(
     image_shape: Tuple[Optional[int], Optional[int]] = (None, None),
     show_everything: bool = False,
     animation_loop: AnimationLoopType = AnimationLoopType.DEFAULT,
+    randomize_poi_position: bool = True,
 ) -> Dict:
 
     """
@@ -60,6 +61,7 @@ def createScene(
         image_shape (Tuple[Optional[int], Optional[int]]): SET BY ENV. Height and Width of the rendered images.
         show_everything (bool): Render additional information for debugging.
         animation_loop (AnimationLoopType): Animation loop of the simulation.
+        randomize_poi_position (bool): Randomize the position of the point of interest.
 
     Returns:
         scene_creation_result = {
@@ -157,6 +159,7 @@ def createScene(
         name="PointOfInterest",
         visual_mesh_path=MODEL_MESH_DIR / "unit_sphere.stl",
         scale=4.5,
+        randomized_pose=randomize_poi_position,
     )
 
     gripper = Gripper(
@@ -179,6 +182,8 @@ def createScene(
             "high": np.array([75.0, 75.0, 1000.0, 300.0]),
         },
         total_mass=1e5,
+        ptsd_reset_noise=np.array([10.0, 10.0, 45.0, 10.0]),
+        angle_reset_noise=20.0,
     )
 
     scene_node.addObject(gripper)
@@ -199,6 +204,7 @@ def createScene(
             "high": np.array([75.0, 75.0, 1000.0, 300.0]),
         },
         total_mass=1e5,
+        ptsd_reset_noise=np.array([10.0, 10.0, 45.0, 10.0]),
     )
 
     scene_node.addObject(cauter)

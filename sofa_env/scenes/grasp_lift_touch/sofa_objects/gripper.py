@@ -11,7 +11,6 @@ from sofa_env.sofa_templates.rigid import PivotizedArticulatedInstrument, Mechan
 from sofa_env.sofa_templates.scene_header import AnimationLoopType, SCENE_HEADER_PLUGIN_LIST
 from sofa_env.sofa_templates.solver import add_solver, SOLVER_PLUGIN_LIST
 from sofa_env.sofa_templates.visual import add_visual_model, VISUAL_PLUGIN_LIST
-from sofa_env.utils.math_helper import is_in
 
 from sofa_env.scenes.grasp_lift_touch.sofa_objects.gallbladder import Gallbladder
 
@@ -68,7 +67,8 @@ class Gripper(Sofa.Core.Controller, PivotizedArticulatedInstrument):
             "low": np.array([-100.0, -100.0, -100.0]),
             "high": np.array([100.0, 100.0, 100.0]),
         },
-        randomize_starting_position: bool = True,
+        ptsd_reset_noise: Optional[Union[np.ndarray, Dict[str, np.ndarray]]] = None,
+        angle_reset_noise: Optional[Union[float, Dict[str, float]]] = None,
         state_limits: Dict = {
             "low": np.array([-75.0, -40.0, -1000.0, 12.0]),
             "high": np.array([75.0, 75.0, 1000.0, 300.0]),
@@ -84,7 +84,6 @@ class Gripper(Sofa.Core.Controller, PivotizedArticulatedInstrument):
         self.name: Sofa.Core.DataString = f"{name}_controller"
         self.gripper_node = parent_node.addChild(f"{name}_node")
 
-        self.randomize_starting_position = randomize_starting_position
         self.initial_state_limits = initial_state_limits
 
         # When to trigger grasping
@@ -119,6 +118,8 @@ class Gripper(Sofa.Core.Controller, PivotizedArticulatedInstrument):
             angular_spring_stiffness=angular_spring_stiffness,
             articulation_spring_stiffness=articulation_spring_stiffness,
             collision_group=collision_group,
+            ptsd_reset_noise=ptsd_reset_noise,
+            angle_reset_noise=angle_reset_noise,
         )
 
         self.gallbladder = gallbladder_to_grasp
@@ -315,27 +316,23 @@ class Gripper(Sofa.Core.Controller, PivotizedArticulatedInstrument):
         self.articulated_state[:4] = self.ptsd_state
         self.articulated_state[-1] = self.get_angle()
 
+    def set_articulated_state(self, state: np.ndarray) -> None:
+        """Set the state of the articulated instrument.
+
+        Args:
+            state: The state to set the articulated instrument to.
+        """
+        self.set_state(state=state[:4])
+        self.set_angle(angle=state[-1])
+        self.articulated_state[:4] = self.ptsd_state
+        self.articulated_state[-1] = self.get_angle()
+
     def reset_gripper(self) -> None:
         """Resets the gripper state and releases any potential grasps."""
 
         PivotizedArticulatedInstrument.reset_state(self)
 
         self._release()
-
-        if self.randomize_starting_position:
-            new_state = self.rng.uniform(self.initial_state_limits["low"], self.initial_state_limits["high"])
-
-            while np.any((self.cartesian_workspace["low"] > self.pivot_transform(new_state)[:3]) | (self.pivot_transform(new_state)[:3] > self.cartesian_workspace["high"])):
-                new_state = self.rng.uniform(self.initial_state_limits["low"], self.initial_state_limits["high"])
-
-            self.initial_pose[:] = self.pivot_transform(new_state)
-            self.initial_state[:] = new_state
-
-        self.set_pose(self.initial_pose)
-        self.set_angle(self.initial_angle)
-        self.ptsd_state[:] = self.initial_state
-        self.articulated_state[:4] = self.initial_state
-        self.articulated_state[-1] = self.initial_angle
 
         self.sphere_collisions_shaft.active.value = True
         self.sphere_collisions_jaw.active.value = True
