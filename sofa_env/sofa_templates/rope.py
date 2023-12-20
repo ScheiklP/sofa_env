@@ -296,6 +296,10 @@ class Rope:
         """Returns the Cartesian positions of the current state of the Rope's MechanicalObject."""
         return self.mechanical_object.position.array()[:, :3]
 
+    def get_velocities(self) -> np.ndarray:
+        """Returns the Cartesian positions of the current state of the Rope's MechanicalObject."""
+        return self.mechanical_object.velocity.array()[:, :3]
+
     def get_reset_positions(self) -> np.ndarray:
         """Returns the Cartesian positions of the reset state of the Rope's MechanicalObject."""
         return self.mechanical_object.reset_position.array()[:, :3]
