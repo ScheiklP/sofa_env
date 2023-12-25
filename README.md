@@ -1,7 +1,7 @@
 # SOFA_ENV
 Gym environments for reinforcement learning based on the [SOFA Simulation Framework](https://www.sofa-framework.org/).
 This repository is part of "LapGym - An Open Source Framework for Reinforcement Learning in Robot-Assisted Laparoscopic Surgery".
-See [LapGym](https://arxiv.org/abs/2302.09606) for the paper and [lap_gym](https://github.com/ScheiklP/lap_gym) for the top level repository.
+See [LapGym](https://www.jmlr.org/papers/v24/23-0207.html) for the paper and [lap_gym](https://github.com/ScheiklP/lap_gym) for the top level repository.
 
 ## Getting Started
 Tested under Ubuntu {18.04, 20.04, 22.04}, Fedora {36, 37}, and Windows (WSL).
@@ -59,11 +59,15 @@ firefox build/html/index.html
 ## Citing
 If you use the project in your work, please consider citing it with:
 ```bibtex
-@article{scheiklLapGym2023,
-    authors = {Scheikl, Paul Maria and Gyenes, Balázs and Younis, Rayan and Haas, Christoph and Neumann, Gerhard and Mathis-Ullrich, Franziska and Wagner, Martin},
-    title = {LapGym - An Open Source Framework for Reinforcement Learning in Robot-Assisted Laparoscopic Surgery},
-    year = {2023},
-    journal={arXiv preprint arXiv:2302.09606},
+@article{JMLR:v24:23-0207,
+  author  = {Paul Maria Scheikl and Balázs Gyenes and Rayan Younis and Christoph Haas and Gerhard Neumann and Martin Wagner and Franziska Mathis-Ullrich},
+  title   = {LapGym - An Open Source Framework for Reinforcement Learning in Robot-Assisted Laparoscopic Surgery},
+  journal = {Journal of Machine Learning Research},
+  year    = {2023},
+  volume  = {24},
+  number  = {368},
+  pages   = {1--42},
+  url     = {http://jmlr.org/papers/v24/23-0207.html}
 }
 ```
 
