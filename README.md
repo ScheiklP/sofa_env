@@ -21,7 +21,7 @@ python3 sofa_env/scenes/controllable_object_example/controllable_env.py
 
 ## Environments
 This repository currently contains 14 reinforcement learning environments.
-- 12 robot-assited laparoscopy environments from [LapGym](https://arxiv.org/abs/2302.09606)
+- 12 robot-assited laparoscopy environments from [LapGym](https://www.jmlr.org/papers/v24/23-0207.html)
 - a reinforcement learning environment around the scene from [A Simulation Framework for Magnetic Continuum Robots](https://github.com/ethz-msrl/mCR_simulator)
 - the reinforcement learning environment from [Sim-to-Real Transfer for Visual Reinforcement Learning of Deformable Object Manipulation for Robot-Assisted Surgery](https://ieeexplore.ieee.org/abstract/document/9976185)
 
