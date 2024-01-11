@@ -305,7 +305,7 @@ class LigatingLoopEnv(SofaEnv):
             self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (3,), dtype=np.uint8)
 
         # Color image and depth map
-        elif self.observation_type == ObservationType.RGBD:
+        elif observation_type == ObservationType.RGBD:
             self.observation_space = spaces.Box(low=0, high=255, shape=image_shape + (4,), dtype=np.uint8)
 
         else:
