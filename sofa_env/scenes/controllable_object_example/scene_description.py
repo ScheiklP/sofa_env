@@ -1,5 +1,6 @@
 from functools import partial
 from pathlib import Path
+from typing import Tuple
 import Sofa
 import Sofa.Core
 
@@ -16,8 +17,10 @@ PLUGIN_LIST = DEFORMABLE_PLUGIN_LIST + RIGID_PLUGIN_LIST + SCENE_HEADER_PLUGIN_L
 HERE = Path(__file__).resolve().parent
 
 
-def createScene(root_node: Sofa.Core.Node):
-
+def createScene(
+    root_node: Sofa.Core.Node,
+    image_shape: Tuple[int, int] = (600, 600),
+):
     add_scene_header(
         root_node=root_node,
         plugin_list=PLUGIN_LIST,
@@ -41,8 +44,8 @@ def createScene(root_node: Sofa.Core.Node):
         },
         z_near=0.1,
         z_far=800.0,
-        width_viewport=600,
-        height_viewport=600,
+        width_viewport=image_shape[1],
+        height_viewport=image_shape[0],
     )
 
     add_wall_visual = partial(add_visual_model, color=(0, 0, 1))
@@ -79,9 +82,19 @@ def createScene(root_node: Sofa.Core.Node):
         add_collision_model_func=add_sphere_collision,
     )
 
-    return {
+    sofa_objects = {
         "root_node": root_node,
         "camera": camera,
         "controllable_sphere": controllable_sphere,
         "deformable_wall": deformable_wall,
     }
+
+    sofa_objects["render_objects"] = {}
+    sofa_objects["render_objects"]["position_containers"] = []
+    sofa_objects["render_objects"]["triangle_containers"] = []
+    sofa_objects["render_objects"]["position_containers"].append(deformable_wall.visual_model_node.OglModel)
+    sofa_objects["render_objects"]["triangle_containers"].append(deformable_wall.visual_model_node.OglModel)
+    sofa_objects["render_objects"]["position_containers"].append(controllable_sphere.visual_model_node.OglModel)
+    sofa_objects["render_objects"]["triangle_containers"].append(controllable_sphere.visual_model_node.OglModel)
+
+    return sofa_objects

@@ -84,7 +84,7 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
             )
 
     def reset(self, **kwargs):
-        """Reads the data for the point clouds from the sofa_env after it is resetted."""
+        """Reads the data for the semantically segmented image from the sofa_env after it is reset."""
 
         # First reset calls _init_sim to setup the scene
         observation, reset_info = self.env.reset(**kwargs)
@@ -170,6 +170,7 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
 
         if self.camera_configs is None:
             center = self.camera_object.lookAt.array()
+            # TODO: For some reason, the up direction needs to be flipped. Compare with depth and point cloud wrapper.
             up_direction = -rotated_y_axis(self.camera_object.orientation.array())
             eye = self.camera_object.position.array()
             rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(

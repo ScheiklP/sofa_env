@@ -1,15 +1,19 @@
 import gymnasium.spaces as spaces
 import numpy as np
+import cv2
 
 from pathlib import Path
 from sofa_env.base import SofaEnv, RenderMode, RenderFramework
 from typing import Optional, Tuple, Union, Any, Dict
+
+from sofa_env.wrappers.depth_observation import DepthObservationWrapper
 
 
 class ControllableEnv(SofaEnv):
     def __init__(
         self,
         scene_path: Union[str, Path],
+        image_shape: Tuple[int, int] = (300, 600),
         time_step: float = 0.01,
         frame_skip: int = 1,
         render_mode: RenderMode = RenderMode.HUMAN,
@@ -17,6 +21,10 @@ class ControllableEnv(SofaEnv):
         create_scene_kwargs: Optional[dict] = None,
         maximum_velocity: float = 50.0,
     ) -> None:
+        # Pass image shape to the scene creation function
+        if create_scene_kwargs is None:
+            create_scene_kwargs = {}
+        create_scene_kwargs["image_shape"] = image_shape
         super().__init__(
             scene_path,
             time_step=time_step,
@@ -59,16 +67,19 @@ if __name__ == "__main__":
 
     env = ControllableEnv(
         scene_path=scene_description,
-        render_mode=RenderMode.HUMAN,
+        render_mode=RenderMode.NONE,
     )
 
-    env.reset()
+    env = DepthObservationWrapper(env)
+    reset_obs = env.reset()
 
     action = np.array([-1, 0, 0], dtype=np.float32)
     done = False
 
     try:
         while not done:
-            _, _, done, _, _ = env.step(action)
+            obs, _, done, _, _ = env.step(action)
+            cv2.imshow("Depth", obs)
+            cv2.waitKey(1)
     except KeyboardInterrupt:
         pass
