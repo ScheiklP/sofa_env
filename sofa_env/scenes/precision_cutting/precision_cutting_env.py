@@ -355,6 +355,7 @@ class PrecisionCuttingEnv(SofaEnv):
             self.tracking_point_indices_on_cutting_path = farthest_point_sampling(
                 points=points_on_cutting_path,
                 num_samples=min(self.num_tracking_points_on_cutting_path, len(points_on_cutting_path)),
+                rng=self.rng,
             )
 
             # Retrieve the triangles that are part of the path.
