@@ -78,7 +78,6 @@ class Cavity:
         rotation_reset_noise: Optional[Union[np.ndarray, Dict[str, np.ndarray]]] = None,
         band_width: float = 4.0,
     ) -> None:
-
         self.node = parent_node.addChild(name)
         self.height = height
         self.inner_radius = inner_radius
@@ -194,7 +193,9 @@ class Cavity:
         self.node.addObject("TetrahedronSetTopologyContainer", tetrahedra=tetrahedra_node.TetrahedronSetTopologyContainer.tetrahedra.array(), position=points)
         self.node.addObject("TetrahedronSetTopologyModifier")
         self.mechanical_object = self.node.addObject("MechanicalObject", showObject=show_object, showObjectScale=show_object_scale)
-        self.node.addObject("FastTetrahedralCorotationalForceField", youngModulus=young_modulus, poissonRatio=poisson_ratio)
+        # TODO: Currently unstable
+        # self.node.addObject("FastTetrahedralCorotationalForceField", youngModulus=young_modulus, poissonRatio=poisson_ratio)
+        self.node.addObject("TetrahedralCorotationalFEMForceField", youngModulus=young_modulus, poissonRatio=poisson_ratio)
         self.node.addObject("UniformMass", totalMass=total_mass)
 
         # Fixed constraint at the end
@@ -303,7 +304,6 @@ class Cavity:
         return indices
 
     def get_subsampled_indices_on_band(self, discretization_radius: int, discretization_angle: int, discretization_height: int) -> List[int]:
-
         if not self._valid_subsampling(discretization_height=discretization_height, discretization_angle=discretization_angle, discretization_radius=discretization_radius):
             raise ValueError(f"Cannot subsample the cavity with the given discretization value. Radius {discretization_radius} of {self.discretization_radius}\nHeight {discretization_height} of {self.discretization_height}\nAngle {discretization_angle} of {self.discretization_angle}")
 
