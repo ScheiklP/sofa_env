@@ -239,7 +239,10 @@ class RopeThreadingEnv(SofaEnv):
                 )
                 self._do_action = self._do_action_dict
             else:
-                self.action_space = spaces.Box(low=np.tile(action_space_limits["low"], 2), high=np.tile(action_space_limits["high"], 2), shape=(10,), dtype=np.float32)
+                if action_type == ActionType.CONTINUOUS:
+                    self.action_space = spaces.Box(low=action_space_limits["low"], high=action_space_limits["high"], shape=(10,), dtype=np.float32)
+                else:
+                    self.action_space = spaces.Box(low=np.tile(action_space_limits["low"], 2), high=np.tile(action_space_limits["high"], 2), shape=(10,), dtype=np.float32)
                 self._do_action = self._do_action_array
 
         ###################
@@ -800,10 +803,7 @@ class RopeThreadingEnv(SofaEnv):
         # Reset scene objects
         def reset_gripper(gripper_key: str, gripper: ArticulatedGripper):
             if options and gripper_key in options:
-                gripper_reset_options = {
-                    k: options[gripper_key][k] if k in options[gripper_key] else None
-                    for k in ["rcm_pose", "state", "angle"]
-                }
+                gripper_reset_options = {k: options[gripper_key][k] if k in options[gripper_key] else None for k in ["rcm_pose", "state", "angle"]}
                 gripper.reset_gripper(**gripper_reset_options)
             else:
                 gripper.reset_gripper()
