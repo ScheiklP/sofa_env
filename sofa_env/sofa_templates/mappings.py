@@ -18,8 +18,11 @@ class MappingType(Enum):
 
     **IdentityMapping** maps the points between child and parent and assumes that they are exactly
     the same number.
+
+    **SubsetMapping** maps the points between child and parent and assumes that the child is a subset
     """
 
     RIGID = "RigidMapping"
     BARYCENTRIC = "BarycentricMapping"
     IDENTITY = "IdentityMapping"
+    SUBSET = "SubsetMapping"
