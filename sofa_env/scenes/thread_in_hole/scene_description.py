@@ -164,8 +164,8 @@ def createScene(
         ),
     )
     if not debug_rendering:
-        root_node.addObject("DirectionalLight", direction=(2, 1, -1), color=(0.8, 0.8, 0.8, 1.0))
-        root_node.addObject("DirectionalLight", direction=(0, -1, 0), color=(0.8, 0.8, 0.8, 1.0))
+        root_node.addObject("DirectionalLight", name="light1", direction=(2, 1, -1), color=(0.8, 0.8, 0.8, 1.0))
+        root_node.addObject("DirectionalLight", name="light2", direction=(0, -1, 0), color=(0.8, 0.8, 0.8, 1.0))
         root_node.addObject("OglShadowShader")
 
     camera = Camera(
