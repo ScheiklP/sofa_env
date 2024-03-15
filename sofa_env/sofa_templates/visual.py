@@ -3,7 +3,7 @@ import Sofa.Core
 import numpy as np
 
 from pathlib import Path
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, List
 
 from sofa_env.sofa_templates.loader import add_loader, LOADER_PLUGIN_LIST
 from sofa_env.sofa_templates.mappings import MappingType, MAPPING_PLUGIN_LIST
@@ -19,6 +19,34 @@ VISUAL_PLUGIN_LIST = (
     + LOADER_PLUGIN_LIST
     + MAPPING_PLUGIN_LIST
 )
+
+
+def get_ogl_models(node: Sofa.Core.Node, model_list: Optional[List[Sofa.Core.Object]] = None) -> List[Sofa.Core.Object]:
+    """Recursively searches for all ``"OglModel"`` objects in a node and its children.
+
+    Args:
+        node (Sofa.Core.Node): The node to search for ``"OglModel"`` objects.
+        model_list (Optional[List[Sofa.Core.Object]]): List of ``"OglModel"`` objects.
+
+    Returns:
+        model_list (List[Sofa.Core.Object]): List of ``"OglModel"`` objects.
+
+    Example:
+        >>> get_ogl_models(root_node)
+    """
+
+    if model_list is None:
+        model_list = []
+
+    for obj in node.objects:
+        if hasattr(obj, "getAsACreateObjectParameter") and (obj_path := obj.getAsACreateObjectParameter()) is not None:
+            if obj_path.endswith("OglModel"):
+                model_list.append(obj)
+
+    for child in node.children:
+        get_ogl_models(child, model_list)
+
+    return model_list
 
 
 def add_visual_model(
