@@ -16,9 +16,10 @@ Install build dependencies
     sudo apt -y install libeigen3-dev
     sudo apt -y install libcanberra-gtk-module libcanberra-gtk3-module
     sudo apt -y install qt5-default
+    sudo apt -y install libtinyxml2-dev
 
 .. note::
-   For Ubuntu 22.04, replace ``sudo apt -y install qt5-default`` with ``sudo apt-get install qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools``.
+   For Ubuntu 22.04 and later, replace ``sudo apt -y install qt5-default`` with ``sudo apt -y install qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5charts5-dev``.
 
 Preparing python
 ################
@@ -40,7 +41,7 @@ We recommend using Conda.
 
    .. code-block:: bash
 
-      conda create -n sofa python=3.9
+      conda create -n sofa python=3.10
       conda activate sofa
       conda install -c conda-forge pybind11
 
@@ -109,12 +110,12 @@ Clone the SOFA repository
    mkdir -p $FOLDER_TARGET
    git clone https://github.com/sofa-framework/sofa.git $FOLDER_SRC
    cd $FOLDER_SRC
-   git checkout v23.06
+   git checkout v23.12
    cd $FOLDER_SP3
    git init
    git remote add origin https://github.com/sofa-framework/SofaPython3.git
    git pull origin master
-   git checkout 5a7371616fe8914530d44bf25ea6b724a6b1a08e
+   git checkout f1ac0f03efd6f6e7c30df8b18259e16da523f0b2
 
 .. _cmake:
 
