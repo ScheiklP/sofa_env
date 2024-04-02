@@ -24,23 +24,92 @@ This repository currently contains 14 reinforcement learning environments.
 - 12 robot-assited laparoscopy environments from [LapGym](https://www.jmlr.org/papers/v24/23-0207.html)
 - a reinforcement learning environment around the scene from [A Simulation Framework for Magnetic Continuum Robots](https://github.com/ethz-msrl/mCR_simulator)
 - the reinforcement learning environment from [Sim-to-Real Transfer for Visual Reinforcement Learning of Deformable Object Manipulation for Robot-Assisted Surgery](https://ieeexplore.ieee.org/abstract/document/9976185)
+- an additional environment for bimanual tissue manipulation from [Movement Primitive Diffusion](https://scheiklp.github.io/movement-primitive-diffusion/).
 
-| Video                                                                            | Name                     |
-|----------------------------------------------------------------------------------|:-------------------------|
-| <img src="docs/source/images/environments/reach.gif" width="100"/>               | Reach                    |
-| <img src="docs/source/images/environments/deflect_spheres.gif" width="100"/>     | Deflect Spheres          |
-| <img src="docs/source/images/environments/search_for_point.gif" width="100"/>    | Search for Point         |
-| <img src="docs/source/images/environments/tissue_manipulation.gif" width="100"/> | Tissue Manipulation      |
-| <img src="docs/source/images/environments/pick_and_place.gif" width="100"/>      | Pick and Place           |
-| <img src="docs/source/images/environments/grasp_lift_touch.gif" width="100"/>    | Grasp Lift and Touch     |
-| <img src="docs/source/images/environments/rope_cutting.gif" width="100"/>        | Rope Cutting             |
-| <img src="docs/source/images/environments/precision_cutting.gif" width="100"/>   | Precision Cutting        |
-| <img src="docs/source/images/environments/tissue_dissection.gif" width="100"/>   | Tissue Dissection        |
-| <img src="docs/source/images/environments/thread_in_hole.gif" width="100"/>      | Thread in Hole           |
-| <img src="docs/source/images/environments/rope_threading.gif" width="100"/>      | Rope Threading           |
-| <img src="docs/source/images/environments/ligating_loop.gif" width="100"/>       | Ligating Loop            |
-| <img src="docs/source/images/environments/tissue_retraction.gif" width="100"/>   | Tissue Retraction        |
-| <img src="docs/source/images/environments/mcr.gif" width="100"/>                 | Magnetic Continuum Robot |
+<table style="width: 100%; border-collapse: collapse; border: 0;">
+ </tr>
+    <tr>
+    <td> Reach </td>
+    <td> Deflect Spheres </td>
+    <td> Search for Point </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/source/images/environments/reach.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/deflect_spheres.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/search_for_point.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+  </tr>
+  <tr>
+    <td> Tissue Manipulation </td>
+    <td> Pick and Place </td>
+    <td> Grasp Lift and Touch </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/source/images/environments/tissue_manipulation.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/pick_and_place.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/grasp_lift_touch.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+  </tr>
+  <tr>
+    <td> Rope Cutting </td>
+    <td> Precision Cutting </td>
+    <td> Tissue Dissection </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/source/images/environments/rope_cutting.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/precision_cutting.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/tissue_dissection.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+  </tr>
+  <tr>
+    <td> Thread in Hole </td>
+    <td> Rope Threading </td>
+    <td> Ligating Loop </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/source/images/environments/thread_in_hole.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/rope_threading.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/ligating_loop.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+  </tr>
+  <tr>
+  </td>
+    <td> Tissue Retraction </td>
+    <td> Magnetic Continuum Robot </td>
+    <td> Bimanual Tissue Manipulation </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/source/images/environments/tissue_retraction.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/mcr.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    <td>
+      <img src="docs/source/images/environments/bimanual_tissue_manipulation.gif" style="width: 100%; max-width: 50px; height: auto;">
+    </td>
+    </tr>
+</table>
 
 ## Adding new Environments
 A ``SofaEnv`` base class and ``sofa_templates`` are provided to simplify implementing new reinforcement environments.
