@@ -72,3 +72,5 @@ if __name__ == "__main__":
             _, _, done, _, _ = env.step(action)
     except KeyboardInterrupt:
         pass
+
+    env.close()
