@@ -45,8 +45,9 @@ class Simulator(Sofa.Core.Controller):
         self.root_node.addObject("RequiredPlugin", name="Sofa.Component.Constraint.Lagrangian.Solver")
         self.lcp_solver = self.root_node.addObject("LCPConstraintSolver", mu=str(friction_coef), tolerance="1e-6", maxIt="10000", build_lcp="false")
         self.root_node.addObject("RequiredPlugin", name="Sofa.Component.Collision.Response.Contact")
-        self.root_node.addObject("CollisionPipeline", draw="0", depth="6", verbose="1")
         self.root_node.addObject("RequiredPlugin", name="Sofa.Component.Collision.Detection.Algorithm")
+        self.root_node.addObject("RequiredPlugin", name="Sofa.Component.Collision.Detection.Intersection")
+        self.root_node.addObject("CollisionPipeline", draw="0", depth="6", verbose="1")
         # NOTE: Commented out as it is deprecated
         # Replaced by following two objects
         # self.root_node.addObject(
@@ -54,7 +55,6 @@ class Simulator(Sofa.Core.Controller):
         #     name='N2')
         self.root_node.addObject("BruteForceBroadPhase", name="N2_1")
         self.root_node.addObject("BVHNarrowPhase", name="N2_2")
-        self.root_node.addObject("RequiredPlugin", name="Sofa.Component.Collision.Detection.Intersection")
         self.root_node.addObject("LocalMinDistance", contactDistance="0.002", alarmDistance="0.003", name="localmindistance", angleCone="0.02")
         self.root_node.addObject("CollisionResponse", name="Response", response="FrictionContactConstraint")
         self.root_node.addObject("RequiredPlugin", name="SofaMiscCollision")
