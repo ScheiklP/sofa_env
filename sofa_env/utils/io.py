@@ -3,6 +3,18 @@ from typing import Union
 import open3d as o3d
 import numpy as np
 
+HERE = Path(__file__).resolve().parent
+ASSET_DIR = HERE.parent.parent / "assets"
+
+
+def get_asset_dir() -> Path:
+    """Get the asset directory.
+
+    Returns:
+        Path: The asset directory.
+    """
+    return ASSET_DIR
+
 
 class PointCloudWriter:
     """Class to write point clouds to a ply file.
