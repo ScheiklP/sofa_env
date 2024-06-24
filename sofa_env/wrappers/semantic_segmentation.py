@@ -59,9 +59,6 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
         else:
             num_object_types = self._scene_description_module.NUM_OBJECT_TYPES
 
-        # Add one channel for background
-        num_object_types += 1
-
         if camera_configs is None:
             if not hasattr(env, "create_scene_kwargs"):
                 raise ValueError("No camera_configs specified and could not find create_scene_kwargs in env.")
@@ -213,6 +210,8 @@ class SemanticSegmentationWrapper(gym.ObservationWrapper):
         segmentation_frames = self.object_types[segmentation_frames]
 
         H, W, C = self.observation_space.shape
+        # Temporarily add another channel for the background class
+        C += 1
         masks = np.zeros((H, W, C), dtype=self.observation_space.dtype)
 
         # Split the segmentation_frames into one_hot encoded masks
