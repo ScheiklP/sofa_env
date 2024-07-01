@@ -217,7 +217,8 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
 
     def close(self) -> None:
         """Performs necessary cleanup when environment is no longer needed."""
-        self.sofa_simulation.unload(self._sofa_root_node)
+        if hasattr(self, "sofa_simulation"):
+            self.sofa_simulation.unload(self._sofa_root_node)
         if hasattr(self, "_window") and self._window is not None:
             self._window.close()
 
