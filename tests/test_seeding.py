@@ -26,14 +26,14 @@ class TestSeeding:
         seeds = [123, 456, 789]
         for seed in seeds:
             env.seed(seed)
-            org_reset_obs = env.reset()
+            org_reset_obs, info = env.reset()
             org_image = env.render(mode="rgb_array")
             for _ in range(5):
                 for _ in range(10):
-                    obs, _, _, _ = env.step(env.action_space.sample())
+                    obs, _, _, _, _ = env.step(env.action_space.sample())
                     assert not np.allclose(obs, org_reset_obs, atol=1e-6, rtol=1e-6)
                 env.seed(seed)
-                reset_obs = env.reset()
+                reset_obs, info = env.reset()
                 image = env.render(mode="rgb_array")
                 assert np.allclose(reset_obs, org_reset_obs, atol=1e-6, rtol=1e-6)
                 assert np.allclose(image, org_image, atol=1e-6, rtol=1e-6)
