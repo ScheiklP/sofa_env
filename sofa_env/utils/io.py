@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Union
 import open3d as o3d
 import numpy as np
+import os
 
 HERE = Path(__file__).resolve().parent
 ASSET_DIR = HERE.parent.parent / "assets"
@@ -63,3 +64,32 @@ class PointCloudWriter:
         file_path = self.log_dir / Path(f"{self.counter:06d}.ply")
         o3d.io.write_point_cloud(str(file_path), o3d_point_cloud)
         self.counter += 1
+
+
+class SuppressOutput:
+    def __init__(self, suppress_stdout=False, suppress_stderr=False):
+        self.suppress_stdout = suppress_stdout
+        self.suppress_stderr = suppress_stderr
+
+    def __enter__(self):
+
+        devnull = os.open(os.devnull, os.O_WRONLY)
+
+        if self.suppress_stdout:
+            self.saved_stdout = os.dup(1)
+            os.dup2(devnull, 1)
+
+        if self.suppress_stderr:
+            self.saved_stderr = os.dup(2)
+            os.dup2(devnull, 2)
+
+        os.close(devnull)
+
+    def __exit__(self, *args, **kwargs):
+        if self.suppress_stdout:
+            os.dup2(self.saved_stdout, 1)
+            os.close(self.saved_stdout)
+
+        if self.suppress_stderr:
+            os.dup2(self.saved_stderr, 2)
+            os.close(self.saved_stderr)

@@ -9,6 +9,8 @@ from enum import Enum, unique
 from pathlib import Path
 from typing import Dict, Optional, Union, Any, Tuple
 
+from sofa_env.utils.io import SuppressOutput
+
 
 @unique
 class RenderMode(Enum):
@@ -64,6 +66,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         render_mode (RenderMode): create a window (``RenderMode.HUMAN``) or run headless (``RenderMode.HEADLESS``).
         create_scene_kwargs (Optional[dict]): a dictionary to pass additional keyword arguments to the ``createScene`` function.
         render_framework (RenderFramework): choose between pyglet and pygame for rendering
+        suppress_sofa_init_messages (bool): suppresses SOFA messages in the console. SOFA will print a lot of information to the console by default on initialization of the scene.
     """
 
     def __init__(
@@ -74,6 +77,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         render_mode: RenderMode = RenderMode.NONE,
         create_scene_kwargs: Optional[dict] = None,
         render_framework: RenderFramework = RenderFramework.PYGLET,
+        suppress_sofa_init_messages: bool = False,
     ) -> None:
         if "SOFA_ROOT" not in os.environ:
             raise RuntimeError("Missing SOFA_ROOT in your environment variables.")
@@ -92,6 +96,7 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         self._modules_imported = False
         self._scene_path = Path(scene_path)
         self._window = None
+        self.suppress_sofa_init_messages = suppress_sofa_init_messages
 
         if not self.internal_render_mode == RenderMode.NONE:
             self.render_mode = "rgb_array"
@@ -203,7 +208,8 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
             self.unconsumed_seed = True
 
         if not self._initialized:
-            self._init_sim()
+            with SuppressOutput(suppress_stdout=self.suppress_sofa_init_messages, suppress_stderr=self.suppress_sofa_init_messages):
+                self._init_sim()
 
         self.sofa_simulation.reset(self._sofa_root_node)
 
