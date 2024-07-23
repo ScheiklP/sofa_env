@@ -527,7 +527,7 @@ class GraspLiftTouchEnv(SofaEnv):
             while not self.gripper.grasp_established:
                 # Move the gripper to the gallbladder.
                 optimal_state = np.array([3.0, 20.0, 95.0, 215.0, 30.0])
-                if self.gripper.randomize_starting_position and not skip_random_grasping:
+                if self.gripper.ptsd_reset_noise is not None and not skip_random_grasping:
                     optimal_state += self.rng.uniform(-3.0, 3.0, optimal_state.shape)
                 action_plan = create_linear_motion_action_plan(optimal_state, self.gripper.get_ptsda_state(), self.time_step, self._maximum_state_velocity)
                 for action in action_plan:
