@@ -11,7 +11,7 @@ SCENE_HEADER_PLUGIN_LIST = [
     "Sofa.Component.Collision.Detection.Intersection",  # <- [NewProximityIntersection]
     "Sofa.Component.Constraint.Lagrangian.Solver",  # <- [LCPConstraintSolver]
     "Sofa.Component.Visual",  # <- [VisualStyle]
-    "Sofa.Component.UserInterface.ConfigurationSetting",  # <- [BackgroundSetting]
+    "Sofa.Component.Setting",  # <- [BackgroundSetting]
 ]
 
 
