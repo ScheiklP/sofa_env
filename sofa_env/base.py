@@ -79,11 +79,6 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         render_framework: RenderFramework = RenderFramework.PYGLET,
         suppress_sofa_init_messages: bool = False,
     ) -> None:
-        if "SOFA_ROOT" not in os.environ:
-            raise RuntimeError("Missing SOFA_ROOT in your environment variables.")
-
-        if "SOFAPYTHON3_ROOT" not in os.environ:
-            raise RuntimeError("Missing SOFAPYTHON3_ROOT in your environment variables.")
 
         # HUMAN -> create and show a pyglet window
         # HEADLESS -> no pyglet window created
