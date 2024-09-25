@@ -148,6 +148,8 @@ setup(
         "open3d",
         "pytest",
         "filelock",
+        "pybind==2.9.1",
+        "scipy",
     ],
     python_requires=">=3.9",
     cmdclass={
