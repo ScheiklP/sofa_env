@@ -4,18 +4,43 @@ This repository is part of "LapGym - An Open Source Framework for Reinforcement 
 See [LapGym](https://www.jmlr.org/papers/v24/23-0207.html) for the paper and [lap_gym](https://github.com/ScheiklP/lap_gym) for the top level repository.
 
 ## Getting Started
-Tested under Ubuntu {18.04, 20.04, 22.04}, Fedora {36, 37}, and Windows (WSL).
-MacOS (on Intel and Apple Silicon) is technically supported, however
-it currently does not work due to a cmake problem in the pybind11 part of [SofaPython3](https://github.com/sofa-framework/SofaPython3).
+### Option A: Using sofa_env as a package
 
-1. Follow the [instructions](docs/source/setting_up_sofa.rst) to install SOFA and SofaPython3
-2. Install the `sofa_env` package
+1. Make sure you are using Python 3.10, as the SOFA binaries are compiled for this version.
 ```bash
+python3 --version
+```
+You can use conda, pyenv, or a virtual environment to manage your Python installation.
+```bash
+# Conda
+conda create -n sofa python=3.10
 conda activate sofa
+```
+
+2. You can then install the package directly from the repository with
+```bash
+pip install git+https://github.com/ScheiklP/sofa_env
+```
+
+3. And then test the installation with
+```bash
+python3 -m sofa_env.scenes.controllable_object_example.controllable_env
+```
+
+### Option B: Modifying the environments
+If you want to modify the environments, you can clone the repository and install it in editable mode.
+```bash
+git clone https://github.com/ScheiklP/sofa_env.git 
+cd sofa_env
 pip install -e .
+python3 sofa_env/scenes/controllable_object_example/controllable_env.py
 ```
-3. Test the installation
-```
+
+### Option C: Manually setting up SOFA and SofaPython3
+If you want to set up SOFA and SofaPython3 manually, you can follow the [instructions](docs/source/setting_up_sofa.rst) to install SOFA and SofaPython3.
+And then install the `sofa_env` package with an environment variable to tell the setup script to skip the SOFA installation.
+```bash
+SKIP_SOFA=1 pip install -e .
 python3 sofa_env/scenes/controllable_object_example/controllable_env.py
 ```
 

@@ -23,3 +23,6 @@ __pycache__
 # Logs from recording demonstrations
 videos
 trajectories
+
+# The SOFA binaries
+SOFA
