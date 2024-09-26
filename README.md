@@ -26,9 +26,7 @@ git clone https://github.com/ScheiklP/sofa_env.git
 2. Install the repository
 ```bash
 cd sofa_env
-pip install .
 
-# If you want changes something in the code, install in editable mode
 # pip install -e .
 ```
 
