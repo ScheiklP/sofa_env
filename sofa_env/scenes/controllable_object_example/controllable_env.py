@@ -60,6 +60,7 @@ if __name__ == "__main__":
     env = ControllableEnv(
         scene_path=scene_description,
         render_mode=RenderMode.HUMAN,
+        render_framework=RenderFramework.PYGAME,
     )
 
     env.reset()
