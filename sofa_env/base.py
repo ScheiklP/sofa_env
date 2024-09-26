@@ -221,7 +221,10 @@ class SofaEnv(gym.Env, metaclass=abc.ABCMeta):
         if hasattr(self, "sofa_simulation"):
             self.sofa_simulation.unload(self._sofa_root_node)
         if hasattr(self, "_window") and self._window is not None:
-            self._window.close()
+            if self.render_framework == RenderFramework.PYGLET:
+                self._window.close()
+            else:
+                self.pygame.quit()
 
     def _init_sim(self) -> None:
         """Initializes simulation by creating the scene graph."""
