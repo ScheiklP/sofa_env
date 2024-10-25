@@ -19,8 +19,8 @@ RIGID_PLUGIN_LIST = (
         "Sofa.Component.StateContainer",  # <- [MechanicalObject]
         "Sofa.Component.Constraint.Lagrangian.Correction",  # <- [UncoupledConstraintCorrection]
         "ArticulatedSystemPlugin",  # <- [ArticulatedHierarchyContainer, ArticulatedSystemMapping, Articulation, ArticulationCenter]
-        "Sofa.Component.Constraint.Lagrangian.Model",  # <- [StopperConstraint]
-        "Sofa.Component.Constraint.Projective",  # <- [AttachConstraint]
+        "Sofa.Component.Constraint.Lagrangian.Model",  # <- [StopperLagrangianConstraint]
+        "Sofa.Component.Constraint.Projective",  # <- [AttachProjectiveConstraint]
         "Sofa.Component.Mapping.NonLinear",  # <- [RigidMapping]
         "Sofa.Component.SolidMechanics.Spring",  # <- [RestShapeSpringsForceField]
         "Sofa.Component.Engine.Select",  # <- [BoxROI]
@@ -47,7 +47,7 @@ class RigidObject:
         visual_mesh_path (Optional[Union[str, Path]]): Path to the visual surface mesh.
         collision_mesh_path (Optional[Union[str, Path]]): Path to the collision surface mesh.
         pose (Union[Tuple[float, float, float, float, float, float, float], np.ndarray]): 6D pose of the object described as Cartesian position and quaternion.
-        fixed_position (bool): Whether to add a ``"FixedConstraint"`` to hold the object in place with its original position.
+        fixed_position (bool): Whether to add a ``"FixedProjectiveConstraint"`` to hold the object in place with its original position.
         fixed_orientation (bool): Whether to add a ``"FixedRotationConstraint"`` to hold the object in place with its original orientation.
         total_mass (float): Total mass of the deformable object.
         scale: (Union[float, Tuple[float, float, float]]): Scale factor for loading the meshes.
@@ -104,9 +104,9 @@ class RigidObject:
             showObjectScale=show_object_scale,
         )
 
-        # Add a FixedConstraint to hold the object in its initial pose
+        # Add a FixedProjectiveConstraint to hold the object in its initial pose
         if fixed_position:
-            self.node.addObject("FixedConstraint", template="Rigid3d", fixAll=True)
+            self.node.addObject("FixedProjectiveConstraint", template="Rigid3d", fixAll=True)
 
         if fixed_orientation:
             self.node.addObject(
@@ -165,7 +165,7 @@ class ControllableRigidObject:
     """Combines all the sofa components to describe a rigid object that can be controlled by updating its pose.
 
     Notes:
-        Nodes are separeted into a controllable part without collision models (target) and a non-controllable part that follows the target via a ``"RestShapeSpringsForceField"`` or ``"AttachConstraint"`` (controlled by ``mechanical_binding``).
+        Nodes are separeted into a controllable part without collision models (target) and a non-controllable part that follows the target via a ``"RestShapeSpringsForceField"`` or ``"AttachProjectiveConstraint"`` (controlled by ``mechanical_binding``).
         Separation is necessary to correctly resolve large motions between time steps that would otherwise lead to unresolvable collision.
 
     Args:
@@ -183,7 +183,7 @@ class ControllableRigidObject:
         is_carving_tool (bool): If set to True, will add a ``"CarvingTool"`` tag to the collision models. Requires the SofaCarving plugin to be compiled.
         show_object (bool): Whether to render the nodes.
         show_object_scale (float): Render size of the node if ``show_object`` is ``True``.
-        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachConstraint"`` to combine controllable and non-controllable part of the object.
+        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachProjectiveConstraint"`` to combine controllable and non-controllable part of the object.
         spring_stiffness (Optional[float]): Spring stiffness of the ``"RestShapeSpringsForceField"``.
         angular_spring_stiffness (Optional[float]): Angular spring stiffness of the ``"RestShapeSpringsForceField"``.
         collision_group (int): The group for which collisions with this object should be ignored. Value has to be set since the jaws and shaft must belong to the same group.
@@ -257,9 +257,9 @@ class ControllableRigidObject:
             self.physical_body_node.addObject("UniformMass", totalMass=total_mass)
 
         if mechanical_binding == MechanicalBinding.ATTACH:
-            # Introduce an AttachConstraint to bind the position of the motion target to the body
+            # Introduce an AttachProjectiveConstraint to bind the position of the motion target to the body
             self.node.addObject(
-                "AttachConstraint",
+                "AttachProjectiveConstraint",
                 object1=self.motion_target_mechanical_object.getLinkPath(),
                 object2=self.physical_body_mechanical_object.getLinkPath(),
                 indices1=[0],
@@ -387,7 +387,7 @@ class PivotizedRigidObject(ControllableRigidObject):
         is_carving_tool (bool): If set to True, will add a ``"CarvingTool"`` tag to the collision models. Requires the SofaCarving plugin to be compiled.
         show_object (bool): Whether to render the nodes.
         show_object_scale (float): Render size of the node if ``show_object`` is ``True``.
-        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachConstraint"`` to combine controllable and non-controllable part of the object.
+        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachProjectiveConstraint"`` to combine controllable and non-controllable part of the object.
         spring_stiffness (Optional[float]): Spring stiffness of the ``"RestShapeSpringsForceField"``.
         angular_spring_stiffness (Optional[float]): Angular spring stiffness of the ``"RestShapeSpringsForceField"``.
         collision_group (int): The group for which collisions with this object should be ignored. Value has to be set since the jaws and shaft must belong to the same group.
@@ -400,6 +400,7 @@ class PivotizedRigidObject(ControllableRigidObject):
         show_remote_center_of_motion (bool): Whether to render the remote center of motion.
         show_workspace (bool): Whether to render the workspace.
     """
+
     def __init__(
         self,
         parent_node: Sofa.Core.Node,
@@ -567,9 +568,7 @@ class PivotizedRigidObject(ControllableRigidObject):
                 raise TypeError("Please pass the ptsd_reset_noise as a numpy array or a dictionary with 'low' and 'high' keys.")
 
             # Do that until a pose is found that fits in the Cartesian workspace and the state limits
-            while np.any((self.state_limits["low"] > new_state) | (new_state > self.state_limits["high"])) or np.any(
-                (self.cartesian_workspace["low"] > self.pivot_transform(new_state)[:3]) | (self.pivot_transform(new_state)[:3] > self.cartesian_workspace["high"])
-            ):
+            while np.any((self.state_limits["low"] > new_state) | (new_state > self.state_limits["high"])) or np.any((self.cartesian_workspace["low"] > self.pivot_transform(new_state)[:3]) | (self.pivot_transform(new_state)[:3] > self.cartesian_workspace["high"])):
                 if isinstance(self.ptsd_reset_noise, np.ndarray):
                     # Uniformly sample from -noise to +noise and add it to the initial state
                     new_state = self.initial_state + self.rng.uniform(-self.ptsd_reset_noise, self.ptsd_reset_noise)
@@ -598,7 +597,7 @@ class ArticulatedInstrument:
     """Combines all the sofa components to describe a rigid object that can be controlled by updating its pose and features one or two controllable jaws.
 
     Notes:
-        Nodes are separeted into a controllable part without collision models (target) and a non-controllable part that follows the target via a ``"RestShapeSpringsForceField"`` or ``"AttachConstraint"`` (controlled by ``mechanical_binding``).
+        Nodes are separeted into a controllable part without collision models (target) and a non-controllable part that follows the target via a ``"RestShapeSpringsForceField"`` or ``"AttachProjectiveConstraint"`` (controlled by ``mechanical_binding``).
         Separation is necessary to correctly resolve large motions between time steps that would otherwise lead to unresolvable collision.
 
     Args:
@@ -622,7 +621,7 @@ class ArticulatedInstrument:
         animation_loop_type (AnimationLoopType): The animation loop of the scene. Required to determine if objects for constraint correction should be added.
         show_object (bool): Whether to render the nodes.
         show_object_scale (float): Render size of the node if ``show_object`` is ``True``.
-        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachConstraint"`` to combine controllable and non-controllable part of the object.
+        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachProjectiveConstraint"`` to combine controllable and non-controllable part of the object.
         spring_stiffness (Optional[float]): Spring stiffness of the ``"RestShapeSpringsForceField"``.
         angular_spring_stiffness (Optional[float]): Angular spring stiffness of the ``"RestShapeSpringsForceField"``.
         articulation_spring_stiffness (Optional[float]): Spring stiffness of the ``"RestShapeSpringsForceField"`` of the articulation.
@@ -682,7 +681,7 @@ class ArticulatedInstrument:
         self.angle_motion_target_mechanical_object = self.angle_motion_target_node.addObject(
             "MechanicalObject",
             template="Vec1d",
-            position=[angle, -angle] if two_jaws else [angle],
+            position=[float(angle), -float(angle)] if two_jaws else [float(angle)],
         )
 
         # Add controllable part without collision or visual model
@@ -690,7 +689,7 @@ class ArticulatedInstrument:
         self.motion_target_mechanical_object = self.motion_target_node.addObject(
             "MechanicalObject",
             template="Rigid3d",
-            position=pose,
+            position=pose.tolist(),
             showObject=show_object,
             showObjectScale=show_object_scale,
         )
@@ -700,7 +699,7 @@ class ArticulatedInstrument:
         self.physical_shaft_mechanical_object = self.physical_shaft_node.addObject(
             "MechanicalObject",
             template="Rigid3d",
-            position=self.initial_pose,
+            position=self.initial_pose.tolist(),
             showObject=show_object,
             showObjectScale=show_object_scale,
         )
@@ -711,7 +710,7 @@ class ArticulatedInstrument:
         if mechanical_binding == MechanicalBinding.ATTACH:
             # Add a constraint that binds the physical body to the motion target
             self.node.addObject(
-                "AttachConstraint",
+                "AttachProjectiveConstraint",
                 object1=self.motion_target_mechanical_object.getLinkPath(),
                 object2=self.physical_shaft_mechanical_object.getLinkPath(),
                 indices1=[0],  # The first Rigid3d pose of the motion target is mapped to
@@ -768,11 +767,11 @@ class ArticulatedInstrument:
         self.angle_mechanical_object = self.articulation_description_node.addObject(
             "MechanicalObject",
             template="Vec1d",
-            position=[angle, -angle] if two_jaws else [angle],
+            position=[float(angle), -float(angle)] if two_jaws else [float(angle)],
         )
         if two_jaws:
             self.articulation_description_node.addObject(
-                "StopperConstraint",
+                "StopperLagrangianConstraint",
                 name="angle_limit_jaw_0",
                 min=angle_limits["low"],
                 max=angle_limits["high"],
@@ -780,7 +779,7 @@ class ArticulatedInstrument:
             )
 
             self.articulation_description_node.addObject(
-                "StopperConstraint",
+                "StopperLagrangianConstraint",
                 name="angle_limit_jaw_1",
                 min=-angle_limits["high"],
                 max=-angle_limits["low"],
@@ -788,7 +787,7 @@ class ArticulatedInstrument:
             )
         else:
             self.articulation_description_node.addObject(
-                "StopperConstraint",
+                "StopperLagrangianConstraint",
                 min=-angle_limits["high"],
                 max=-angle_limits["low"],
             )
@@ -916,7 +915,6 @@ class ArticulatedInstrument:
                     except IndexError:
                         raise IndexError(f"Tried to add jaw collision model number {index+1}, but could not find a corresponding collision mesh in {collision_mesh_paths_jaws=}.")
 
-
     def get_pose(self) -> np.ndarray:
         """Reads the Rigid3d pose from the controllable sofa node and returns it as [x, y, z, a, b, c, w].
 
@@ -1031,7 +1029,7 @@ class PivotizedArticulatedInstrument(ArticulatedInstrument):
         animation_loop_type (AnimationLoopType): The animation loop of the scene. Required to determine if objects for constraint correction should be added.
         show_object (bool): Whether to render the nodes.
         show_object_scale (float): Render size of the node if ``show_object`` is ``True``.
-        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachConstraint"`` to combine controllable and non-controllable part of the object.
+        mechanical_binding (MechanicalBinding): Whether to use ``"RestShapeSpringsForceField"`` or ``"AttachProjectiveConstraint"`` to combine controllable and non-controllable part of the object.
         spring_stiffness (Optional[float]): Spring stiffness of the ``"RestShapeSpringsForceField"``.
         angular_spring_stiffness (Optional[float]): Angular spring stiffness of the ``"RestShapeSpringsForceField"``.
         articulation_spring_stiffness (Optional[float]): Spring stiffness of the ``"RestShapeSpringsForceField"`` of the articulation.
@@ -1252,9 +1250,7 @@ class PivotizedArticulatedInstrument(ArticulatedInstrument):
                 raise TypeError("Please pass the ptsd_reset_noise as a numpy array or a dictionary with 'low' and 'high' keys.")
 
             # Do that until a pose is found that fits in the Cartesian workspace and the state limits
-            while np.any((self.state_limits["low"] > new_state) | (new_state > self.state_limits["high"])) or np.any(
-                (self.cartesian_workspace["low"] > self.pivot_transform(new_state)[:3]) | (self.pivot_transform(new_state)[:3] > self.cartesian_workspace["high"])
-            ):
+            while np.any((self.state_limits["low"] > new_state) | (new_state > self.state_limits["high"])) or np.any((self.cartesian_workspace["low"] > self.pivot_transform(new_state)[:3]) | (self.pivot_transform(new_state)[:3] > self.cartesian_workspace["high"])):
                 if isinstance(self.ptsd_reset_noise, np.ndarray):
                     # Uniformly sample from -noise to +noise and add it to the initial state
                     new_state = self.initial_state + self.rng.uniform(-self.ptsd_reset_noise, self.ptsd_reset_noise)

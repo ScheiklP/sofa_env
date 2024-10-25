@@ -178,7 +178,7 @@ class Tissue:
         texcoords = self.get_texture_coordinates()
         self.ogl_model = self.visual_node.addObject(
             "OglModel",
-            texcoords=texcoords,
+            texcoords=texcoords.tolist(),
             texturename=str(texture_file_path),
         )
 
@@ -256,7 +256,7 @@ class Tissue:
         row_indices, column_indiecs = np.meshgrid(np.arange(self.visual_resolution), np.arange(self.visual_resolution), indexing="ij")
 
         # Texture coordinates for tissue
-        tex_coords = np.column_stack([row_indices.ravel(), column_indiecs.ravel()]) / [2 * self.visual_resolution - 1, self.visual_resolution - 1]
+        tex_coords = np.column_stack([row_indices.ravel(), column_indiecs.ravel()]) / [2 * self.visual_resolution - 1, 2 * self.visual_resolution - 1]
 
         return tex_coords
 
@@ -305,10 +305,10 @@ class Tissue:
                 continue
 
             subset_positions = [volume_mesh_positions[index] for index in subset_indices]
-            subset_reference_orientation = subset_orientations[subset_number]
-            subset_reference_position = np.mean(subset_positions, axis=0)
+            subset_reference_orientation_list = subset_orientations[subset_number].tolist()
+            subset_reference_position_list = np.mean(subset_positions, axis=0).tolist()
 
-            subset_reference_poses.append(list(subset_reference_position) + list(subset_reference_orientation))
+            subset_reference_poses.append(subset_reference_position_list + subset_reference_orientation_list)
             flat_rigidification_indices.extend(subset_indices)
             subset_map.extend([subset_number] * len(subset_indices))
 

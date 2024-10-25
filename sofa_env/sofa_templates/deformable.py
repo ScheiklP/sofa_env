@@ -187,7 +187,7 @@ class DeformableObject:
         Args:
             indices (Union[List[int]), np.ndarray]: Indices of the ``MechanicalObject`` that should be fixed.
             fixed_degrees_of_freedom (Tuple[bool, bool, bool]): Which Cartesian degrees of freedom to fix.
-            fixture_func (Callable): Function that adds an object to the SOFA graph that fixes the positions. By default ``FixedConstraint``.
+            fixture_func (Callable): Function that adds an object to the SOFA graph that fixes the positions. By default ``FixedProjectiveConstraint``.
             fixture_func_kwargs (dict): Additional kwargs to pass to the ``fixture_func``.
             attach_to_collision_mesh (bool): Whether to add the component to the collision model (surface) or the node that contains the force field (volume).
         """
@@ -230,7 +230,7 @@ class DeformableObject:
             min (Tuple[float), float, float]: Cartesian minimum values of the bounding box in which to fix the positions.
             max (Tuple[float), float, float]: Cartesian maximum values of the bounding box in which to fix the positions.
             fixed_degrees_of_freedom (Tuple[bool, bool, bool]): Which Cartesian degrees of freedom to fix.
-            fixture_func (Callable): Function that adds an object to the SOFA graph that fixes the positions. By default ``FixedConstraint``.
+            fixture_func (Callable): Function that adds an object to the SOFA graph that fixes the positions. By default ``FixedProjectiveConstraint``.
             fixture_func_kwargs (dict): Additional kwargs to pass to the ``fixture_func``.
             show_bounding_box (bool): Whether to render the bounding box.
             attach_to_collision_mesh (bool): Whether to add the component to the collision model (surface) or the node that contains the force field (volume).
@@ -371,8 +371,11 @@ class CuttableDeformableObject:
         self.surface_node.addObject("TriangleSetGeometryAlgorithms")
         self.surface_node.addObject("Tetra2TriangleTopologicalMapping", input=self.topology_container.getLinkPath(), output=self.surface_topology_container.getLinkPath())
         collision_model_types = ["TriangleCollisionModel", "PointCollisionModel", "LineCollisionModel"]
+        collision_model_kwargs = {"tags": "CarvingSurface"}
+        if animation_loop_type == AnimationLoopType.DEFAULT:
+            collision_model_kwargs["contactStiffness"] = contact_stiffness
         for collision_model_type in collision_model_types:
-            self.surface_node.addObject(collision_model_type, contactStiffness=contact_stiffness, tags="CarvingSurface")
+            self.surface_node.addObject(collision_model_type, **collision_model_kwargs)
 
         self.visual_node = self.surface_node.addChild("visual")
         self.ogl_model = self.visual_node.addObject("OglModel")
@@ -470,11 +473,11 @@ def rigidify(
         # If there are no reference poses for the rigidified parts, create them from the barycenters of the indices that will be rigidified
         if rigid_object_pose is None:
             subset_positions = [volume_mesh_positions[index] for index in subset_indices]
-            subset_reference_orientation = [0.0, 0.0, 0.0, 1.0]
+            subset_reference_orientation = np.array([0.0, 0.0, 0.0, 1.0])
             subset_reference_position = np.mean(subset_positions, axis=0)
         else:
             if len(rigid_object_pose[subset_number]) == 3:
-                subset_reference_orientation = [0.0, 0.0, 0.0, 1.0]
+                subset_reference_orientation = np.array([0.0, 0.0, 0.0, 1.0])
                 subset_reference_position = rigid_object_pose[subset_number]
             elif len(rigid_object_pose[subset_number]) == 7:
                 subset_reference_orientation = rigid_object_pose[subset_number][3:]
@@ -482,7 +485,7 @@ def rigidify(
             else:
                 raise ValueError(f"[ERROR]: Please pass the reference poses for the rigidified subsets either as position (3 values) or pose (7 values). Got {len(rigid_object_pose[subset_number])} for subset {subset_number}.")
 
-        subset_reference_poses.append(list(subset_reference_position) + list(subset_reference_orientation))
+        subset_reference_poses.append(list(subset_reference_position.tolist()) + list(subset_reference_orientation.tolist()))
         flat_rigidification_indices.extend(subset_indices)
         subset_map.extend([subset_number] * len(subset_indices))
 
@@ -500,13 +503,13 @@ def rigidify(
     flat_index_pairs = [value for pair in kd_tree.values() for value in pair]
 
     deformable_parts = mixedmaterial_node.addChild("deformable")
-    deformable_mechanical_object = deformable_parts.addObject("MechanicalObject", template="Vec3d", position=[list(volume_mesh_positions[index] for index in deformable_indices)])
+    deformable_mechanical_object = deformable_parts.addObject("MechanicalObject", template="Vec3d", position=[list(volume_mesh_positions[index].tolist() for index in deformable_indices)])
 
     rigid_parts = mixedmaterial_node.addChild("rigid")
     rigid_parts.addObject("MechanicalObject", template="Rigid3d", position=subset_reference_poses)
 
     rigid_subsets = rigid_parts.addChild("rigid_subsets")
-    rigid_mechanical_object = rigid_subsets.addObject("MechanicalObject", template="Vec3d", position=[list(volume_mesh_positions[index] for index in flat_rigidification_indices)])
+    rigid_mechanical_object = rigid_subsets.addObject("MechanicalObject", template="Vec3d", position=[list(volume_mesh_positions[index].tolist() for index in flat_rigidification_indices)])
     rigid_subsets.addObject("RigidMapping", globalToLocalCoords=True, rigidIndexPerPoint=subset_map)
 
     deformable_object.node.addObject(
@@ -592,6 +595,7 @@ class SimpleDeformableObject:
         collision_group (int): The group for which collisions with this object should be ignored. Value has to be set since the jaws and shaft must belong to the same group.
         cuttable (bool): Whether to add this object to the cuttable objects.
     """
+
     def __init__(
         self,
         parent_node: Sofa.Core.Node,

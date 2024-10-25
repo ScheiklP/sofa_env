@@ -22,7 +22,7 @@ class CuttableRope(Sofa.Core.Controller):
     """Cuttable rope that keeps track of topological changes.
 
     This rope is implemented as a set of vertices and edges that can be cut with
-    the SofaCarving plugin. Each simulation step checks the current size of the 
+    the SofaCarving plugin. Each simulation step checks the current size of the
     topology, and saves changes in ``topology_change_buffer`` which can be consumed
     and reset to 0 with ``consume_topology_change_buffer()``.
     Collisions are modeled as lines on the edges of the rope.
@@ -84,10 +84,10 @@ class CuttableRope(Sofa.Core.Controller):
 
         self.topology = self.node.addObject("EdgeSetTopologyContainer", edges=edges)
         self.node.addObject("EdgeSetTopologyModifier")
-        self.mechanical_object = self.node.addObject("MechanicalObject", template="Rigid3d", position=rope_poses, showObject=show_object, showObjectScale=show_object_scale)
+        self.mechanical_object = self.node.addObject("MechanicalObject", template="Rigid3d", position=np.array(rope_poses).tolist(), showObject=show_object, showObjectScale=show_object_scale)
         self.node.addObject("UniformMass", totalMass=total_mass)
 
-        internal_spring_length = np.linalg.norm(rope_poses[0][:3] - rope_poses[1][:3])
+        internal_spring_length = float(np.linalg.norm(rope_poses[0][:3] - rope_poses[1][:3]))
         self.internal_springs = []
         for edge_start, edge_end in edges:
             self.internal_springs.append([edge_start, edge_end, stiffness, 0.0, internal_spring_length * (1 - contraction_ratio)])
@@ -101,14 +101,14 @@ class CuttableRope(Sofa.Core.Controller):
             self.node.addObject(
                 "PlaneForceField",
                 normal=[0, 0, 1],
-                d=plane_height,
-                stiffness=stiffness,
+                d=float(plane_height),
+                stiffness=str(stiffness),
                 damping=1.0,
                 showPlane=True,
                 showPlaneSize=100,
             )
 
-        self.node.addObject("FixedConstraint", indices=[0, len(rope_poses) - 1])
+        self.node.addObject("FixedProjectiveConstraint", indices=[0, len(rope_poses) - 1])
         self.node.addObject("LinearSolverConstraintCorrection")
 
         collision_node = self.node.addChild("collision")

@@ -128,7 +128,7 @@ def createScene(
         "position": pose[:3],
         "orientation": pose[3:],
     }
-    placement_kwargs["lookAt"] = determine_look_at(camera_position=placement_kwargs["position"], camera_orientation=placement_kwargs["orientation"])
+    placement_kwargs["lookAt"] = determine_look_at(camera_position=placement_kwargs["position"], camera_orientation=placement_kwargs["orientation"]).tolist()
     camera = PhysicalCamera(
         root_node=root_node,
         placement_kwargs=placement_kwargs,

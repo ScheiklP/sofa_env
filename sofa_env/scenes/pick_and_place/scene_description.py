@@ -232,7 +232,7 @@ def createScene(
         showPlaneSize=100,
     )
     torus.node.addObject(
-        "BilateralInteractionConstraint",
+        "BilateralLagrangianConstraint",
         template="Rigid3d",
         object1=torus.mechanical_object.getLinkPath(),
         object2=torus.mechanical_object.getLinkPath(),
@@ -245,7 +245,7 @@ def createScene(
     ######
     add_peg_collision = partial(
         add_collision_model,
-        contact_stiffness=1e2,
+        contact_stiffness=None,
         model_types=[CollisionModelType.LINE, CollisionModelType.TRIANGLE],
         is_static=True,
         collision_group=1,

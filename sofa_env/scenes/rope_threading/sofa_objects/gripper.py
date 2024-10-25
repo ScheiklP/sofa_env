@@ -21,7 +21,6 @@ from sofa_env.utils.pivot_transform import generate_ptsd_to_pose
 GRIPPER_PLUGIN_LIST = (
     [
         "Sofa.Component.SolidMechanics.Spring",  # <- [RestShapeSpringsForceField]
-        "Sofa.Component.Constraint.Lagrangian.Model",  # <- [StopperConstraint]
         "Sofa.Component.Mapping.NonLinear",  # [RigidMapping]
     ]
     + RIGID_PLUGIN_LIST
@@ -42,14 +41,10 @@ def add_shaft_collision_model_func(
     shaft_length = 125
     sphere_collision_positions = np.arange(
         start=-shaft_radius,
-        stop=shaft_length+shaft_radius,
-        step=2*shaft_radius,
+        stop=shaft_length + shaft_radius,
+        step=2 * shaft_radius,
     )
-    sphere_collision_positions = np.column_stack([
-        np.zeros_like(sphere_collision_positions),
-        np.zeros_like(sphere_collision_positions),
-        -sphere_collision_positions
-    ])
+    sphere_collision_positions = np.column_stack([np.zeros_like(sphere_collision_positions), np.zeros_like(sphere_collision_positions), -sphere_collision_positions])
     collision_node = attached_to.addChild(name)
     collision_node.addObject(
         "MechanicalObject",
@@ -97,7 +92,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
         rotation_axis: Tuple[int, int, int] = (1, 0, 0),
         scale: float = 1.0,
         add_solver_func: Callable = add_solver,
-        add_shaft_collision_model_func = add_shaft_collision_model_func,
+        add_shaft_collision_model_func=add_shaft_collision_model_func,
         add_visual_model_func: Callable = add_visual_model,
         animation_loop_type: AnimationLoopType = AnimationLoopType.DEFAULT,
         show_object: bool = False,
@@ -253,12 +248,16 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
             "jaw_1": self.collision_node_jaw_1.addObject("MechanicalObject", template="Vec3d", position=collision_spheres_config["positions"]),
         }
 
+        extra_collision_kwargs = {}
+        if animation_loop_type == AnimationLoopType.DEFAULT:
+            extra_collision_kwargs["contactStiffness"] = collision_contact_stiffness
+
         # Add CollisionModel, and RigidMapping to jaw 0
         self.sphere_collisions_jaw_0 = self.collision_node_jaw_0.addObject(
             "SphereCollisionModel",
             radius=[1] * self.num_spheres,
             group=0 if collision_group is None else collision_group,
-            contactStiffness=collision_contact_stiffness,
+            **extra_collision_kwargs,
         )
         self.collision_node_jaw_0.addObject(
             "RigidMapping",
@@ -271,7 +270,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
             "SphereCollisionModel",
             radius=[1] * self.num_spheres,
             group=0 if collision_group is None else collision_group,
-            contactStiffness=collision_contact_stiffness,
+            **extra_collision_kwargs,
         )
         self.collision_node_jaw_1.addObject(
             "RigidMapping",
@@ -306,7 +305,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
                 "SphereCollisionModel",
                 radius=[1] * len(collision_spheres_config["backside"]),
                 group=0 if collision_group is None else collision_group,
-                contactStiffness=collision_contact_stiffness,
+                **extra_collision_kwargs,
             )
         )
         gripper_backside_jaw_0.addObject("RigidMapping", input=self.joint_mechanical_object.getLinkPath(), index=1)
@@ -315,7 +314,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
                 "SphereCollisionModel",
                 radius=[1] * len(collision_spheres_config["backside"]),
                 group=0 if collision_group is None else collision_group,
-                contactStiffness=collision_contact_stiffness,
+                **extra_collision_kwargs,
             )
         )
         gripper_backside_jaw_1.addObject("RigidMapping", input=self.joint_mechanical_object.getLinkPath(), index=2)
@@ -665,7 +664,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
         if rcm_pose is not None:
             reset_rcm_pose(rcm_pose)
         elif self.rcm_reset_noise is not None:
-        # Generate a new pivot_transform by adding noise to the initial remote_center_of_motion pose
+            # Generate a new pivot_transform by adding noise to the initial remote_center_of_motion pose
             if isinstance(self.rcm_reset_noise, np.ndarray):
                 # Uniformly sample from -noise to +noise and add it to the rcm pose
                 new_rcm_pose = self.initial_remote_center_of_motion + self.rng.uniform(-self.rcm_reset_noise, self.rcm_reset_noise)
@@ -690,9 +689,7 @@ class ArticulatedGripper(Sofa.Core.Controller, ArticulatedInstrument):
                 raise TypeError("Please pass the ptsd_reset_noise as a numpy array or a dictionary with 'low' and 'high' keys.")
 
             # Do that until a pose is found that fits in the Cartesian workspace and the state limits
-            while np.any((self.state_limits["low"] > new_state) | (new_state > self.state_limits["high"])) or np.any(
-                (self.cartesian_workspace["low"] > self.pivot_transform(new_state)[:3]) | (self.pivot_transform(new_state)[:3] > self.cartesian_workspace["high"])
-            ):
+            while np.any((self.state_limits["low"] > new_state) | (new_state > self.state_limits["high"])) or np.any((self.cartesian_workspace["low"] > self.pivot_transform(new_state)[:3]) | (self.pivot_transform(new_state)[:3] > self.cartesian_workspace["high"])):
                 if isinstance(self.ptsd_reset_noise, np.ndarray):
                     # Uniformly sample from -noise to +noise and add it to the initial state
                     new_state = self.initial_state + self.rng.uniform(-self.ptsd_reset_noise, self.ptsd_reset_noise)
@@ -807,7 +804,7 @@ def point_is_in_grasp_cone(gripper_pose: np.ndarray, jaw_poses: np.ndarray, quer
     for jaw_pose in jaw_poses:
         jaw_axis = rotated_z_axis(jaw_pose[3:])
         cone_height = np.dot(jaw_axis * jaw_length, cone_axis)  # scalar product of cone_axis and jaw_axis*length
-        cone_radius = np.sqrt(max(np.linalg.norm(jaw_axis * jaw_length) ** 2 - cone_height ** 2, 0.0))  # countercathete of the jaw axis and the cone height
+        cone_radius = np.sqrt(max(np.linalg.norm(jaw_axis * jaw_length) ** 2 - cone_height**2, 0.0))  # countercathete of the jaw axis and the cone height
 
         distance_to_cone_axis = np.dot(query_point - tip_of_the_cone, cone_axis)
 

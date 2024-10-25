@@ -31,7 +31,7 @@ def createScene(
         "Sofa.Component.Collision.Detection.Intersection",  # [NewProximityIntersection]
         "Sofa.Component.Collision.Geometry",  # [SphereCollisionModel]
         "Sofa.Component.Collision.Response.Contact",  # [DefaultContactManager]
-        "Sofa.Component.Constraint.Projective",  # [FixedConstraint]
+        "Sofa.Component.Constraint.Projective",  # [FixedProjectiveConstraint]
         "Sofa.Component.LinearSolver.Iterative",  # [CGLinearSolver]
         "Sofa.Component.Mass",  # [UniformMass]
         "Sofa.Component.ODESolver.Backward",  # [EulerImplicitSolver]
@@ -92,7 +92,7 @@ def createScene(
     edge_node.addObject("MechanicalObject", showObject=True, showObjectScale=2.0)
     springs = [[first, second, 100, 0.5, 0] for first, second in edges]
     edge_node.addObject("StiffSpringForceField", spring=springs)
-    edge_node.addObject("FixedConstraint", indices=[0, len(positions) - 1])
+    edge_node.addObject("FixedProjectiveConstraint", indices=[0, len(positions) - 1])
     edge_node.addObject("LineCollisionModel")
 
     ##################

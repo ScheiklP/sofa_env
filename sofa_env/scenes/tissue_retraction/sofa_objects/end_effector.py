@@ -17,7 +17,18 @@ from sofa_env.utils.math_helper import is_in
 
 from sofa_env.scenes.tissue_retraction.sofa_objects import Tissue, TISSUE_PLUGIN_LIST
 
-END_EFFECTOR_PLUGIN_LIST = ["SofaDeformable", "SofaGeneralRigid"] + RIGID_PLUGIN_LIST + VISUAL_PLUGIN_LIST + SCENE_HEADER_PLUGIN_LIST + TISSUE_PLUGIN_LIST + MAPPING_PLUGIN_LIST + SOLVER_PLUGIN_LIST
+END_EFFECTOR_PLUGIN_LIST = (
+    [
+        "Sofa.Component.SolidMechanics.Spring",
+        "Sofa.Component.Mapping",
+    ]
+    + RIGID_PLUGIN_LIST
+    + VISUAL_PLUGIN_LIST
+    + SCENE_HEADER_PLUGIN_LIST
+    + TISSUE_PLUGIN_LIST
+    + MAPPING_PLUGIN_LIST
+    + SOLVER_PLUGIN_LIST
+)
 
 
 class EndEffector(Sofa.Core.Controller):

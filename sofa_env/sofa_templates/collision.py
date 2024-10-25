@@ -21,6 +21,7 @@ COLLISION_PLUGIN_LIST = (
 
 class CollisionModelType(Enum):
     """SOFA names for collision models represented as points, lines, and triangles."""
+
     POINT = "PointCollisionModel"
     LINE = "LineCollisionModel"
     TRIANGLE = "TriangleCollisionModel"

@@ -175,7 +175,7 @@ def add_scene_header(
     # Collisions
     ############
     if scene_has_collisions:
-        root_node.addObject("DefaultPipeline", name="CollisionPipeline", depth=collision_pipeline_depth, draw=False, verbose=False)
+        root_node.addObject("CollisionPipeline", depth=collision_pipeline_depth, draw=False, verbose=False)
         root_node.addObject("BruteForceBroadPhase", name="BroadPhase")
         root_node.addObject("BVHNarrowPhase", name="NarrowPhase")
         if animation_loop == AnimationLoopType.FREEMOTION:
@@ -185,7 +185,7 @@ def add_scene_header(
             collision_response = ContactManagerResponse.DEFAULT
             collision_response_kwargs = {}
 
-        root_node.addObject("DefaultContactManager", name="CollisionResponse", response=collision_response.value, **collision_response_kwargs)
+        root_node.addObject("CollisionResponse", response=collision_response.value, **collision_response_kwargs)
 
         if collision_detection_method_kwargs is None:
             collision_detection_method_kwargs = INTERSECTION_METHOD_DEFAULT_KWARGS[collision_detection_method]

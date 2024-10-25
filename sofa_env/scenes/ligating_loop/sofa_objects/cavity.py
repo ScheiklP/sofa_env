@@ -205,7 +205,7 @@ class Cavity:
                 box_limits += translation
 
             bounding_box = self.node.addObject("BoxROI", box=box_limits.ravel())
-            self.node.addObject("FixedConstraint", indices=f"{bounding_box.getLinkPath()}.indices")
+            self.node.addObject("FixedProjectiveConstraint", indices=f"{bounding_box.getLinkPath()}.indices")
 
         # Constraint correction
         if animation_loop_type == AnimationLoopType.FREEMOTION:

@@ -46,7 +46,7 @@ def createScene(root: Sofa.Core.Node, image_shape=(None, None)):
 
     liver.addObject("TetrahedronFEMForceField", youngModulus=1000, poissonRatio=0.4, method="large")
     liver.addObject("UniformMass", totalMass=10.0)
-    liver.addObject("FixedConstraint", indices=[2, 3, 50])
+    liver.addObject("FixedProjectiveConstraint", indices=[2, 3, 50])
 
     visual = liver.addChild("visual")
     visual.addObject("OglModel", src=surface_mesh_loader.getLinkPath(), color="red")

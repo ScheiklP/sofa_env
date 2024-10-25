@@ -15,15 +15,7 @@ from sofa_env.sofa_templates.visual import add_visual_model, VISUAL_PLUGIN_LIST
 
 from sofa_env.scenes.tissue_manipulation.sofa_robot_functions import Workspace
 
-GRIPPER_PLUGIN_LIST = (
-    RIGID_PLUGIN_LIST
-    + SOLVER_PLUGIN_LIST
-    + VISUAL_PLUGIN_LIST
-    + COLLISION_PLUGIN_LIST
-    + SCENE_HEADER_PLUGIN_LIST
-    + TISSUE_PLUGIN_LIST
-    + SOLVER_PLUGIN_LIST
-)
+GRIPPER_PLUGIN_LIST = RIGID_PLUGIN_LIST + SOLVER_PLUGIN_LIST + VISUAL_PLUGIN_LIST + COLLISION_PLUGIN_LIST + SCENE_HEADER_PLUGIN_LIST + TISSUE_PLUGIN_LIST + SOLVER_PLUGIN_LIST
 
 
 class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
@@ -32,7 +24,7 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
     Notes:
         - ``AttachedGripper`` can only be used with a rigidified tissue (deformable + rigid parts).
         - The gripper will follow the movement of the rigidified part of the tissue.
-        - AttachConstraint can be deactivated in order to release the grasp of the tissue.
+        - AttachProjectiveConstraint can be deactivated in order to release the grasp of the tissue.
 
     Args:
         parent_node (Sofa.Core.Node): Parent node of the object.
@@ -51,7 +43,7 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
         animation_loop_type (AnimationLoopType): The animation loop of the scene. Required to determine if objects for constraint correction should be added.
         show_grasping_point (bool): Whether to render the grasping point node.
         randomize_grasping_point (bool): Whether to randomize grasping position. See ``Workspace.gripper_offset_limits``.
-        grasping_active (bool): Whether the grasp is initially activated. ``AttachConstraint == "1"``.
+        grasping_active (bool): Whether the grasp is initially activated. ``AttachProjectiveConstraint == "1"``.
         visual_offset (Union[Tuple[float, float, float, float, float, float, float], np.ndarray])
         workspace (Workspace): Python Workspace Object.
         show_object (bool): Whether to render the nodes.
@@ -93,15 +85,16 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
             self.Rot = euler_to_rotation_matrix(orientation)
 
             new_pos = self.Rot @ position
-            pose = tuple(new_pos) + tuple(rotation_matrix_to_quaternion(self.Rot))
+            pose = tuple(new_pos.tolist()) + tuple(rotation_matrix_to_quaternion(self.Rot).tolist())
 
         if pose is None:
             raise ValueError("'pose' OR 'position' AND 'orientation' OR 'randomize_grasping_point' AND 'orientation' argument are required")
         self.initial_pose = pose
 
-        ControllableRigidObject.__init__(self,
+        ControllableRigidObject.__init__(
+            self,
             parent_node=parent_node,
-            name=name,
+            name=name + "_object",
             total_mass=total_mass,
             pose=pose,
             visual_mesh_path=visual_mesh_path,
@@ -148,11 +141,11 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
     def _attach_gripper_at_tissue(
         self,
     ) -> None:
-        """Adds an ``AttachConstraint`` to fix the gripper to the tissue."""
-        # AttachConstraint gripper -> tissue (OK - but does not work with Motion Target on gripper -> moved to tissue)
-        # AttachConstraint tissue -> gripper (blows up)
+        """Adds an ``AttachProjectiveConstraint`` to fix the gripper to the tissue."""
+        # AttachProjectiveConstraint gripper -> tissue (OK - but does not work with Motion Target on gripper -> moved to tissue)
+        # AttachProjectiveConstraint tissue -> gripper (blows up)
         self.grasping_constraint = self.physical_body_node.addObject(
-            "AttachConstraint",
+            "AttachProjectiveConstraint",
             name="GraspingConstraint",
             object1=self.rigidified_tissue_grasping_point.getLinkPath(),
             object2=self.physical_body_mechanical_object.getLinkPath(),
@@ -173,7 +166,7 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
         if self.is_attached:
             current_position = self.rigidified_tissue_motion_target_mechanical_object.position.array()[0]
         else:
-            print("[Warning] AttachedGripper is currently not attached -> Assert that AttachConstraint is active! Use gripper.set_attach_constraint_to(True)")
+            print("[Warning] AttachedGripper is currently not attached -> Assert that AttachProjectiveConstraint is active! Use gripper.set_attach_constraint_to(True)")
             current_position = self.motion_target_mechanical_object.position.array()[0]
 
         # same orientation for all steps
@@ -246,7 +239,7 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
         return np.asarray(ret)
 
     def set_attach_constraint_to(self, value: bool) -> None:
-        """Activate and deactivate AttachConstraint (self.grasping_constraint)"""
+        """Activate and deactivate AttachProjectiveConstraint (self.grasping_constraint)"""
         # Align rigid reference frame orientation with gripper orientation
         with self.grasping_constraint.constraintFactor.writeable() as factors:
             factors[0] = "1" if value else "0"
@@ -262,7 +255,7 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
             "MechanicalObject",
             name="MotionTarget",
             template="Rigid3d",
-            position=self.rigidified_tissue.rigid.MechanicalObject.position.array(),
+            position=self.rigidified_tissue.rigid.MechanicalObject.position.array().tolist(),
             showObjectScale=0.005,
         )
         rigidified_tissue_motion_target.addObject(
@@ -283,13 +276,15 @@ class AttachedGripper(Sofa.Core.Controller, ControllableRigidObject):
             "MechanicalObject",
             name="GraspingPoint",
             template="Rigid3d",
-            position=self.rigidified_tissue.rigid.MechanicalObject.position.array(),
+            position=self.rigidified_tissue.rigid.MechanicalObject.position.array().tolist(),
             showObjectScale=0.005,
         )
 
     def set_pose(self, pose: np.ndarray, validate: bool = False) -> None:
         """Writes the Rigid3d pose to the Gripper as [x, y, z, a, b, c, w] (position and quaternion)."""
-        pose = pose.reshape(-1,)
+        pose = pose.reshape(
+            -1,
+        )
 
         if self.is_attached:
             current_pose = self.rigidified_tissue_motion_target_mechanical_object.position.array()[0]

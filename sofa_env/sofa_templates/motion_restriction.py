@@ -7,9 +7,9 @@ import Sofa.Core
 from sofa_env.utils.math_helper import euler_to_rotation_matrix
 
 MOTION_RESTRICTION_PLUGIN_LIST = [
-    "SofaBoundaryCondition",
-    "SofaEngine",
-    "Sofa.Component.Constraint.Projective",  # <- [FixedConstraint]
+    "Sofa.Component.MechanicalLoad",
+    "Sofa.Component.Engine.Select",
+    "Sofa.Component.Constraint.Projective",  # <- [FixedProjectiveConstraint]
     "Sofa.Component.SolidMechanics.Spring",  # <- [RestShapeSpringsForceField]
     "Sofa.Component.Engine.Select",  # <- [BoxROI]
 ]
@@ -106,7 +106,7 @@ def add_fixed_constraint_to_indices(
     """Fixes the given indices of the given node's mechanical object to their initial position.
 
     Notes:
-        Technically fixes the initial velocity of the points. So if the velocity is non-zero in time step 0, the indices will continue travelling at that velocity. You can add ``projectVelocity=True`` to the FixedConstraint and PartialFixedConstraint.
+        Technically fixes the initial velocity of the points. So if the velocity is non-zero in time step 0, the indices will continue travelling at that velocity. You can add ``projectVelocity=True`` to the FixedProjectiveConstraint and PartialFixedConstraint.
 
 
     Args:
@@ -116,7 +116,7 @@ def add_fixed_constraint_to_indices(
     """
 
     if all(fixed_degrees_of_freedom):
-        return attached_to.addObject("FixedConstraint", indices=indices)
+        return attached_to.addObject("FixedProjectiveConstraint", indices=indices)
     else:
         return attached_to.addObject("PartialFixedConstraint", indices=indices, fixedDirections=fixed_degrees_of_freedom)
 
@@ -135,7 +135,7 @@ def add_fixed_constraint_in_bounding_box(
     """Finds the indices of the given node's mechanical object in a bounding box and fixes them to their initial position.
 
     Notes:
-        Technically fixes the initial velocity of the points. So if the velocity is non-zero in time step 0, the indices will continue travelling at that velocity. You can add ``projectVelocity=True`` to the FixedConstraint and PartialFixedConstraint.
+        Technically fixes the initial velocity of the points. So if the velocity is non-zero in time step 0, the indices will continue travelling at that velocity. You can add ``projectVelocity=True`` to the FixedProjectiveConstraint and PartialFixedConstraint.
 
     Args:
         attached_to (Sofa.Core.Node): Parent node of the bounding box.
@@ -161,7 +161,7 @@ def add_fixed_constraint_in_bounding_box(
     )
 
     if all(fixed_degrees_of_freedom):
-        return attached_to.addObject("FixedConstraint", indices=f"{bounding_box.getLinkPath()}.indices"), bounding_box.indices.toList()
+        return attached_to.addObject("FixedProjectiveConstraint", indices=f"{bounding_box.getLinkPath()}.indices"), bounding_box.indices.toList()
     else:
         return attached_to.addObject("PartialFixedConstraint", indices=f"{bounding_box.getLinkPath()}.indices", fixedDirections=fixed_degrees_of_freedom)
 

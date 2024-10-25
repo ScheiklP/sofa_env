@@ -25,7 +25,7 @@ WEIGHT_UNIT = "kg"
 PLUGIN_LIST = (
     [
         "SofaPython3",
-        "Sofa.Component.Constraint.Lagrangian.Model",  # [BilateralInteractionConstraint]
+        "Sofa.Component.Constraint.Lagrangian.Model",  # [BilateralLagrangianConstraint]
         "Sofa.Component.MechanicalLoad",  # [ConstantForceField, PlaneForceField, UniformVelocityDampingForceField]
         "Sofa.Component.Mass",  # [UniformMass]
         "Sofa.Component.StateContainer",  # [MechanicalObject]
@@ -194,7 +194,7 @@ def createScene(
     board_node.addObject("CGLinearSolver")
     board_node.addObject("MechanicalObject", template="Rigid3d", showObject=debug_rendering, showObjectScale=1.0)
     board_node.addObject("UniformMass", totalMass=100.0)
-    board_node.addObject("FixedConstraint")
+    board_node.addObject("FixedProjectiveConstraint")
 
     # Mapped Grid
     grid_node = board_node.addChild("grid")
@@ -294,7 +294,7 @@ def createScene(
     indices_tissue_to_board = relevant_tissue_indices[:-num_constraint_points]
     indices_tissue_to_connective_tissue = relevant_tissue_indices[-num_constraint_points:]
 
-    connective_tissue.node.addObject("FixedConstraint", indices=indices_connective_tissue_to_board)
+    connective_tissue.node.addObject("FixedProjectiveConstraint", indices=indices_connective_tissue_to_board)
     tissue.node.addObject("RestShapeSpringsForceField", stiffness=1e3, points=indices_tissue_to_board)
 
     topology_info = {
@@ -309,7 +309,7 @@ def createScene(
     }
 
     connective_tissue.node.addObject(
-        "BilateralInteractionConstraint",
+        "BilateralLagrangianConstraint",
         template="Vec3d",
         object1=tissue.node.MechanicalObject.getLinkPath(),
         object2=connective_tissue.node.MechanicalObject.getLinkPath(),

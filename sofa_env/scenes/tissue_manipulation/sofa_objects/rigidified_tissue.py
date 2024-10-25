@@ -90,7 +90,7 @@ class Tissue(Sofa.Core.Controller, DeformableObject):
             parent_node=parent_node,
             volume_mesh_path=volume_mesh_path,
             total_mass=total_mass,
-            name=name,
+            name=name + "_deformable",
             rotation=rotation,
             translation=translation,
             scale=scale,

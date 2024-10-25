@@ -53,7 +53,7 @@ class FixedLiver(RigidObject):
 
         # add the mechanical object that holds the mechanical state of the rigid object
         self.mechanical_object = self.node.addObject("MechanicalObject", template="Rigid3d", position=pose)
-        self.mechanical_object = self.node.addObject("FixedConstraint", fixAll=True)
+        self.mechanical_object = self.node.addObject("FixedProjectiveConstraint", fixAll=True)
 
         # add mass to the object
         if total_mass is not None:

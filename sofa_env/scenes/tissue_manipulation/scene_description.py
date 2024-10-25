@@ -23,22 +23,7 @@ from sofa_env.scenes.tissue_manipulation.sofa_objects.gripper import AttachedGri
 from sofa_env.scenes.tissue_manipulation.sofa_objects.visual_target import VisualTarget, VISUAL_TARGET_PLUGIN_LIST
 
 
-PLUGIN_LIST = (
-    ["SofaPython3"]
-    + TISSUE_PLUGIN_LIST
-    + GRIPPER_PLUGIN_LIST
-    + VISUAL_TARGET_PLUGIN_LIST
-    + MATERIALS_PLUGIN_LIST
-    + SCENE_HEADER_PLUGIN_LIST
-    + CAMERA_PLUGIN_LIST
-    + MOTION_RESTRICTION_PLUGIN_LIST
-    + RIGID_PLUGIN_LIST
-    + DEFORMABLE_PLUGIN_LIST
-    + SOLVER_PLUGIN_LIST
-    + VISUAL_PLUGIN_LIST
-    + COLLISION_PLUGIN_LIST
-    + MAPPING_PLUGIN_LIST
-)
+PLUGIN_LIST = ["SofaPython3"] + TISSUE_PLUGIN_LIST + GRIPPER_PLUGIN_LIST + VISUAL_TARGET_PLUGIN_LIST + MATERIALS_PLUGIN_LIST + SCENE_HEADER_PLUGIN_LIST + CAMERA_PLUGIN_LIST + MOTION_RESTRICTION_PLUGIN_LIST + RIGID_PLUGIN_LIST + DEFORMABLE_PLUGIN_LIST + SOLVER_PLUGIN_LIST + VISUAL_PLUGIN_LIST + COLLISION_PLUGIN_LIST + MAPPING_PLUGIN_LIST
 
 LENGTH_UNIT = "m"
 TIME_UNIT = "s"
@@ -214,7 +199,7 @@ def createScene(
     )
 
     placement_kwargs = {
-        "distance": np.linalg.norm(np.asarray(camera_position) - np.asarray(camera_look_at)),  # is recalculated in SOFA
+        "distance": float(np.linalg.norm(np.asarray(camera_position) - np.asarray(camera_look_at))),  # is recalculated in SOFA
         "pivot": 2,  # custom manipulation settings are required for this scene due to scaling issues with the meshes
         "zoomSpeed": 25.0,
         "panSpeed": 0.5,
@@ -262,7 +247,7 @@ def createScene(
             visual_mesh_path=tissue_surface_mesh_path,
             collision_mesh_path=tissue_collision_mesh_path,
             material=Material(
-                constitutive_model=ConstitutiveModel.NEOHOOKEAN,  # Hyperelastic material
+                constitutive_model=ConstitutiveModel.COROTATED,
                 poisson_ratio=tissue_poisson_ratio,
                 young_modulus=tissue_young_modulus,
             ),
@@ -302,7 +287,7 @@ def createScene(
         show_bounding_box=False,
     )
     bb_fixed.init()
-    rigidified_tissue.deformable.addObject("FixedConstraint", indices=f"{bb_fixed.getLinkPath()}.indices")
+    rigidified_tissue.deformable.addObject("FixedProjectiveConstraint", indices=f"{bb_fixed.getLinkPath()}.indices")
 
     # Align rigid reference frame orientation with gripper orientation
     with rigidified_tissue.rigid.MechanicalObject.position.writeable() as positions:
@@ -333,14 +318,16 @@ def createScene(
             color=COLOR_LIVER,
         ),
         collision_mesh_path=liver_collision_mesh_path if with_collision_models else None,
-        add_collision_model_func=partial(
-            add_collision_model,
-            rotation=liver_rotation,
-            translation=liver_translation,
-            collision_group=collision_group_liver,
-        )
-        if with_collision_models
-        else add_collision_model,
+        add_collision_model_func=(
+            partial(
+                add_collision_model,
+                rotation=liver_rotation,
+                translation=liver_translation,
+                collision_group=collision_group_liver,
+            )
+            if with_collision_models
+            else add_collision_model
+        ),
     )
 
     ###############################################################################################

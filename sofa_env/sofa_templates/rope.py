@@ -15,7 +15,7 @@ ROPE_PLUGIN_LIST = (
     [
         "Sofa.Component.Collision.Geometry",  # <- [LineCollisionModel, PointCollisionModel, TriangleCollisionModel, SphereCollisionModel]
         "Sofa.Component.Constraint.Lagrangian.Correction",  # <- [LinearSolverConstraintCorrection]
-        "Sofa.Component.Constraint.Projective",  # <- [FixedConstraint]
+        "Sofa.Component.Constraint.Projective",  # <- [FixedProjectiveConstraint]
         "Sofa.Component.Mass",  # <- [UniformMass]
         "Sofa.Component.Mapping.Linear",  # <- [IdentityMapping, TubularMapping]
         "Sofa.Component.SolidMechanics.FEM.Elastic",  # <- [BeamFEMForceField]
@@ -150,7 +150,7 @@ class Rope:
                 indices.append(0)
             if fix_end:
                 indices.append(1)
-            self.node.addObject("FixedConstraint", indices=indices)
+            self.node.addObject("FixedProjectiveConstraint", indices=indices)
 
         if use_beam_adapter_plugin:
             if total_mass is None:
@@ -208,7 +208,8 @@ class Rope:
         if check_self_collision:
             collision_model_kwargs["selfCollision"] = True
         if collision_contact_stiffness is not None:
-            collision_model_kwargs["contactStiffness"] = collision_contact_stiffness
+            if animation_loop_type == AnimationLoopType.DEFAULT:
+                collision_model_kwargs["contactStiffness"] = collision_contact_stiffness
 
         if collision_type == RopeCollisionType.LINES_AND_POINTS:
             self.collision_node.addObject("MechanicalObject", template="Vec3d", size=len(poses))
@@ -508,7 +509,7 @@ class CosseratRope:
         self.rigid_base_node.addObject("MechanicalObject", template="Rigid3d", position=np.append(start_position, [0.0, 0.0, 0.0, 1.0]))
 
         if fix_start:
-            self.rigid_base_node.addObject("FixedConstraint")
+            self.rigid_base_node.addObject("FixedProjectiveConstraint")
 
         ################
         # Cosserat state

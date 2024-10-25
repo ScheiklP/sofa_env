@@ -67,10 +67,10 @@ class RopeCuttingEnv(SofaEnv):
         image_shape: Tuple[int, int] = (124, 124),
         observation_type: ObservationType = ObservationType.RGB,
         action_type: ActionType = ActionType.CONTINUOUS,
-        time_step: float = 0.01,
+        time_step: float = 0.1,
         frame_skip: int = 10,
         settle_steps: int = 50,
-        settle_step_dt: float = 0.01,
+        settle_step_dt: float = 0.1,
         render_mode: RenderMode = RenderMode.HEADLESS,
         render_framework: RenderFramework = RenderFramework.PYGLET,
         reward_amount_dict={
@@ -511,7 +511,6 @@ class RopeCuttingEnv(SofaEnv):
         return self._get_observation(maybe_rgb_observation=self._maybe_update_rgb_buffer()), {}
 
 
-
 if __name__ == "__main__":
     import pprint
     import time
@@ -526,7 +525,7 @@ if __name__ == "__main__":
         frame_skip=1,
         time_step=0.1,
         settle_steps=10,
-        settle_step_dt=0.01,
+        settle_step_dt=0.1,
     )
 
     env.reset()

@@ -49,9 +49,9 @@ Frequently Asked Questions (FAQ)
 
    * - I added components to the scene, but they seem to do nothing.
    * - | Maybe you added two components of the same type, to the same node.
-       | For example two ``FixedConstraint``s. If a node has more than one
+       | For example two ``FixedProjectiveConstraint``s. If a node has more than one
        | component of the same type, you have to set different names for them.
-       | E.g. ``node.addObject("FixedConstraint", name="first_constraint")``
+       | E.g. ``node.addObject("FixedProjectiveConstraint", name="first_constraint")``
 
 .. _faq_opengl:
 .. list-table::
